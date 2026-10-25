@@ -5,7 +5,7 @@ import { mix, shade, withAlpha } from './color';
 import type { Palette } from './palette';
 import { PixelCanvas, type Point } from './PixelCanvas';
 import { paintBellFrame } from './propArt';
-import { hashString, Rng } from './rng';
+import { hashString, Rng } from '../../core/rng';
 import { isDawn, paintCracks, paintVine, softGlow, type PaintedSprite } from './stonework';
 
 function sprite(width: number, height: number, anchorX: number, anchorY: number): PaintedSprite & { canvas: PixelCanvas; glow: PixelCanvas } {

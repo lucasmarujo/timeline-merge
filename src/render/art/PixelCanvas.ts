@@ -1,5 +1,5 @@
 import { hexToRgb } from './color';
-import type { Rng } from './rng';
+import type { Rng } from '../../core/rng';
 
 export interface Point {
   x: number;

@@ -27,6 +27,7 @@ export interface TouchFrame {
   timeline: Timeline;
   shiftBlocked: boolean;
   interact: InteractCue;
+  enabled: ReadonlySet<ActionButton>;
 }
 
 interface ActionPointer {
@@ -51,12 +52,14 @@ const BUTTON_ACTIONS: Readonly<Record<ActionButton, Action>> = {
   [TouchButton.Jump]: Action.Jump,
   [TouchButton.Shift]: Action.Shift,
   [TouchButton.Interact]: Action.Interact,
+  [TouchButton.Dash]: Action.Dash,
 };
 
 const BUTTON_LABELS: Readonly<Record<TouchButton, string>> = {
   [TouchButton.Jump]: 'Jump',
   [TouchButton.Shift]: 'Shift',
   [TouchButton.Interact]: 'Use',
+  [TouchButton.Dash]: 'Dash',
   [TouchButton.Pause]: 'Pause',
 };
 
@@ -64,6 +67,7 @@ const BUTTON_ICONS: Readonly<Record<TouchButton, string>> = {
   [TouchButton.Jump]: '<path d="M5 13l7-7 7 7"/><path d="M5 19l7-7 7 7" opacity=".45"/>',
   [TouchButton.Shift]: '<path d="M12 2v20"/><path d="M12 7l4.5 5-4.5 5-4.5-5z"/>',
   [TouchButton.Interact]: '<circle cx="12" cy="12" r="3.2"/><path d="M12 3v3.5M12 17.5V21M3 12h3.5M17.5 12H21"/>',
+  [TouchButton.Dash]: '<path d="M3 12h10M5 7h6M5 17h6"/><path d="M14 6l6 6-6 6"/>',
   [TouchButton.Pause]: '<path d="M9 6v12M15 6v12"/>',
 };
 
@@ -105,6 +109,8 @@ export class TouchControls {
   private insetsApplied = false;
   private layoutQueued = false;
   private visible = false;
+  private enabled: ReadonlySet<ActionButton> = new Set(ACTION_BUTTONS);
+  private enabledApplied = false;
 
   constructor(
     private readonly controls: InputController,
@@ -126,6 +132,7 @@ export class TouchControls {
       [TouchButton.Jump]: this.button(TouchButton.Jump),
       [TouchButton.Shift]: this.button(TouchButton.Shift),
       [TouchButton.Interact]: this.button(TouchButton.Interact),
+      [TouchButton.Dash]: this.button(TouchButton.Dash),
       [TouchButton.Pause]: this.button(TouchButton.Pause),
     };
     this.root.append(this.pad, ...ACTION_BUTTONS.map((button) => this.buttons[button]), this.padZone, this.actionZone, this.buttons[TouchButton.Pause]);
@@ -157,10 +164,30 @@ export class TouchControls {
       if (!visible) this.releaseAll();
     }
     if (!visible) return;
+    this.applyEnabled(frame.enabled);
     if (this.root.dataset.timeline !== frame.timeline) this.root.dataset.timeline = frame.timeline;
     this.buttons[TouchButton.Shift].classList.toggle('is-blocked', frame.shiftBlocked);
     const interact = this.buttons[TouchButton.Interact];
     if (interact.dataset.cue !== frame.interact) interact.dataset.cue = frame.interact;
+  }
+
+  private applyEnabled(enabled: ReadonlySet<ActionButton>): void {
+    let changed = !this.enabledApplied;
+    for (const button of ACTION_BUTTONS) {
+      const on = enabled.has(button);
+      const was = this.enabled.has(button);
+      if (this.enabledApplied && on === was) continue;
+      changed = true;
+      const element = this.buttons[button];
+      element.classList.toggle('is-locked', !on);
+      if (on && !was && this.enabledApplied) {
+        element.classList.add('is-new');
+        window.setTimeout(() => element.classList.remove('is-new'), 2600);
+      }
+    }
+    if (!changed) return;
+    this.enabled = new Set(enabled);
+    this.enabledApplied = true;
   }
 
   releaseAll(): void {
@@ -273,7 +300,7 @@ export class TouchControls {
   private track(pointer: ActionPointer, x: number, y: number): void {
     const layout = this.layout;
     if (!layout) return;
-    const hit = hitActionButton(layout, x, y);
+    const hit = hitActionButton(layout, x, y, this.enabled);
     if (hit === pointer.current) return;
     pointer.current = hit;
     if (hit === TouchButton.Jump) pointer.holdsJump = true;

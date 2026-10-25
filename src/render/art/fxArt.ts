@@ -110,3 +110,17 @@ export function paintVerticalFade(): PixelCanvas {
   ]);
   return pc;
 }
+
+export function paintVoidEdge(): PixelCanvas {
+  const width = 128;
+  const pc = new PixelCanvas(width, 4);
+  const gradient = pc.ctx.createLinearGradient(0, 0, width, 0);
+  gradient.addColorStop(0, 'rgba(8,5,18,1)');
+  gradient.addColorStop(0.62, 'rgba(26,12,52,0.96)');
+  gradient.addColorStop(0.84, 'rgba(120,70,220,0.85)');
+  gradient.addColorStop(0.92, 'rgba(236,214,255,0.9)');
+  gradient.addColorStop(1, 'rgba(180,120,255,0)');
+  pc.ctx.fillStyle = gradient;
+  pc.ctx.fillRect(0, 0, width, 4);
+  return pc;
+}

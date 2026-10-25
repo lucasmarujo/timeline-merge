@@ -11,6 +11,9 @@ export enum TravelerAnimation {
   Rise = 'rise',
   Fall = 'fall',
   Land = 'land',
+  Dash = 'dash',
+  Glide = 'glide',
+  WallSlide = 'wallSlide',
 }
 
 export interface AnimationSequence {
@@ -26,9 +29,12 @@ export const TRAVELER_SEQUENCES: Readonly<Record<TravelerAnimation, AnimationSeq
   [TravelerAnimation.Rise]: { start: 14, count: 2, frameRate: 8, repeat: -1 },
   [TravelerAnimation.Fall]: { start: 16, count: 2, frameRate: 8, repeat: -1 },
   [TravelerAnimation.Land]: { start: 18, count: 1, frameRate: 1, repeat: 0 },
+  [TravelerAnimation.Dash]: { start: 19, count: 1, frameRate: 1, repeat: 0 },
+  [TravelerAnimation.Glide]: { start: 20, count: 2, frameRate: 6, repeat: -1 },
+  [TravelerAnimation.WallSlide]: { start: 22, count: 1, frameRate: 1, repeat: 0 },
 };
 
-export const TRAVELER_FRAME_COUNT = 19;
+export const TRAVELER_FRAME_COUNT = 23;
 
 interface LegPose {
   dx: number;
@@ -116,6 +122,38 @@ function buildPoses(): Pose[] {
     armBack: -1,
     armRaise: -1,
     cape: { reach: 3, drop: 8, wave: 0 },
+    hairSweep: 0,
+  });
+  poses.push({
+    bob: 1,
+    front: { dx: 3, lift: 1 },
+    back: { dx: -4, lift: 2 },
+    armFront: -3,
+    armBack: -3,
+    armRaise: 1,
+    cape: { reach: 12, drop: 1, wave: 0.6 },
+    hairSweep: 2,
+  });
+  for (let index = 0; index < 2; index++) {
+    poses.push({
+      bob: 0,
+      front: { dx: 1, lift: 0 },
+      back: { dx: -1, lift: 0 },
+      armFront: 2,
+      armBack: -2,
+      armRaise: 5,
+      cape: { reach: 10 + index, drop: -6 - index, wave: index ? 1 : -1 },
+      hairSweep: 1,
+    });
+  }
+  poses.push({
+    bob: 1,
+    front: { dx: 2, lift: 3 },
+    back: { dx: 0, lift: 1 },
+    armFront: 3,
+    armBack: 2,
+    armRaise: 5,
+    cape: { reach: 4, drop: 10, wave: 0.4 },
     hairSweep: 0,
   });
   return poses;

@@ -8,12 +8,15 @@ export enum Action {
   Jump = 'jump',
   Shift = 'shift',
   Interact = 'interact',
+  Dash = 'dash',
   Restart = 'restart',
   Pause = 'pause',
   Mute = 'mute',
   Confirm = 'confirm',
   MenuUp = 'menuUp',
   MenuDown = 'menuDown',
+  MenuLeft = 'menuLeft',
+  MenuRight = 'menuRight',
 }
 
 const KeyCodes = Phaser.Input.Keyboard.KeyCodes;
@@ -24,12 +27,15 @@ const BINDINGS: Readonly<Record<Action, readonly number[]>> = {
   [Action.Jump]: [KeyCodes.W, KeyCodes.UP, KeyCodes.SPACE],
   [Action.Shift]: [KeyCodes.TAB],
   [Action.Interact]: [KeyCodes.E],
+  [Action.Dash]: [KeyCodes.Q, KeyCodes.K],
   [Action.Restart]: [KeyCodes.R],
   [Action.Pause]: [KeyCodes.ESC],
   [Action.Mute]: [KeyCodes.M],
   [Action.Confirm]: [KeyCodes.ENTER, KeyCodes.SPACE],
   [Action.MenuUp]: [KeyCodes.W, KeyCodes.UP],
   [Action.MenuDown]: [KeyCodes.S, KeyCodes.DOWN],
+  [Action.MenuLeft]: [KeyCodes.A, KeyCodes.LEFT],
+  [Action.MenuRight]: [KeyCodes.D, KeyCodes.RIGHT],
 };
 
 export class InputController {

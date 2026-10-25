@@ -3,7 +3,7 @@ import { GAME_HEIGHT, HALF_WIDTH } from '../config';
 import { Timeline } from '../core/enums';
 import { BACKDROP_LAYERS, BackdropLayerId, SKY_FACTOR } from './art/backdropArt';
 import { toTint } from './art/color';
-import { paletteFor } from './art/palette';
+import type { Palette } from './art/palette';
 import { FxTexture, TextureKey } from './art/textureKeys';
 import { DEPTH } from './depths';
 
@@ -11,6 +11,7 @@ interface Shaft {
   image: Phaser.GameObjects.Image;
   baseAlpha: number;
   phase: number;
+  index: number;
 }
 
 interface FogBand {
@@ -26,16 +27,20 @@ const FOG_SCALE = 4;
 const FOG_REFERENCE_SCROLL_Y = 560;
 
 export class Backdrop {
+  private readonly sky: Phaser.GameObjects.Image;
   private readonly clouds: Phaser.GameObjects.TileSprite;
   private readonly shafts: Shaft[] = [];
   private readonly fogBands: FogBand[] = [];
+  private readonly floorFade: Phaser.GameObjects.Image;
+  private readonly lightDirection: number;
   private time = 0;
 
-  constructor(scene: Phaser.Scene, layer: Phaser.GameObjects.Layer, timeline: Timeline) {
-    const palette = paletteFor(timeline);
+  constructor(scene: Phaser.Scene, layer: Phaser.GameObjects.Layer, timeline: Timeline, palette: Palette, viewWidth: number = HALF_WIDTH) {
     const isDawn = timeline === Timeline.Dawn;
+    this.lightDirection = palette.lightDirection;
 
-    layer.add(scene.add.image(0, 0, TextureKey.sky(timeline)).setOrigin(0).setScrollFactor(0).setScale(SKY_FACTOR).setDepth(DEPTH.sky));
+    this.sky = scene.add.image(0, 0, TextureKey.sky(timeline)).setOrigin(0).setScrollFactor(0).setScale(SKY_FACTOR).setDepth(DEPTH.sky);
+    layer.add(this.sky);
 
     this.clouds = scene.add
       .tileSprite(0, GAME_HEIGHT * 0.36, HALF_WIDTH, 60 * CLOUD_SCALE, TextureKey.cloudBand(timeline))
@@ -65,11 +70,10 @@ export class Backdrop {
     }
 
     const shaftCount = isDawn ? 5 : 3;
-    const sourceX = palette.lightDirection > 0 ? HALF_WIDTH + 40 : -40;
     for (let index = 0; index < shaftCount; index++) {
       const spread = (index / Math.max(1, shaftCount - 1)) * 0.9;
       const image = scene.add
-        .image(sourceX - palette.lightDirection * (60 + index * 70), -60, FxTexture.Shaft)
+        .image(0, -60, FxTexture.Shaft)
         .setOrigin(0.5, 0)
         .setScrollFactor(0)
         .setBlendMode(Phaser.BlendModes.ADD)
@@ -80,7 +84,7 @@ export class Backdrop {
       const baseAlpha = isDawn ? 0.16 - index * 0.015 : 0.07;
       image.setAlpha(baseAlpha);
       layer.add(image);
-      this.shafts.push({ image, baseAlpha, phase: index * 1.7 });
+      this.shafts.push({ image, baseAlpha, phase: index * 1.7, index });
     }
 
     const fogTint = toTint(palette.fog);
@@ -101,16 +105,27 @@ export class Backdrop {
       this.fogBands.push({ sprite, parallax: band.parallax, drift: band.drift, screenY: band.screenY });
     }
 
-    layer.add(
-      scene.add
-        .image(0, GAME_HEIGHT, FxTexture.Fade)
-        .setOrigin(0, 1)
-        .setScrollFactor(0)
-        .setDisplaySize(HALF_WIDTH, GAME_HEIGHT * 0.3)
-        .setTint(fogTint)
-        .setAlpha(isDawn ? 0.55 : 0.5)
-        .setDepth(DEPTH.frontFog),
-    );
+    this.floorFade = scene.add
+      .image(0, GAME_HEIGHT, FxTexture.Fade)
+      .setOrigin(0, 1)
+      .setScrollFactor(0)
+      .setDisplaySize(HALF_WIDTH, GAME_HEIGHT * 0.3)
+      .setTint(fogTint)
+      .setAlpha(isDawn ? 0.55 : 0.5)
+      .setDepth(DEPTH.frontFog);
+    layer.add(this.floorFade);
+    this.resize(viewWidth);
+  }
+
+  resize(viewWidth: number): void {
+    this.sky.setDisplaySize(Math.max(viewWidth, HALF_WIDTH), GAME_HEIGHT);
+    this.clouds.setSize(viewWidth, this.clouds.height);
+    for (const band of this.fogBands) band.sprite.setSize(viewWidth, band.sprite.height);
+    this.floorFade.setDisplaySize(viewWidth, GAME_HEIGHT * 0.3);
+    const sourceX = this.lightDirection > 0 ? viewWidth + 40 : -40;
+    for (const shaft of this.shafts) {
+      shaft.image.setX(sourceX - this.lightDirection * (60 + shaft.index * 70));
+    }
   }
 
   update(dt: number, scrollX: number, scrollY: number): void {

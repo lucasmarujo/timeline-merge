@@ -29,6 +29,43 @@ describe('GameFlow', () => {
     expect(flow.phase).toBe(GamePhase.Finale);
   });
 
+  it('briefs a discovery before play and lets the atlas pick any echo', () => {
+    const flow = new GameFlow();
+    expect(flow.dispatch(FlowAction.OpenAtlas)).toBe(true);
+    expect(flow.phase).toBe(GamePhase.Atlas);
+    expect(flow.dispatch(FlowAction.Brief)).toBe(true);
+    expect(flow.phase).toBe(GamePhase.Briefing);
+    expect(flow.can(FlowAction.Pause)).toBe(false);
+    expect(flow.dispatch(FlowAction.Start)).toBe(true);
+    expect(flow.phase).toBe(GamePhase.Playing);
+  });
+
+  it('completes a gate echo and moves on to the next one', () => {
+    const flow = new GameFlow();
+    flow.dispatch(FlowAction.Start);
+    expect(flow.dispatch(FlowAction.Exit)).toBe(true);
+    expect(flow.phase).toBe(GamePhase.LevelComplete);
+    expect(flow.can(FlowAction.Pause)).toBe(false);
+    expect(flow.dispatch(FlowAction.Brief)).toBe(true);
+    expect(flow.dispatch(FlowAction.Start)).toBe(true);
+    flow.dispatch(FlowAction.Exit);
+    expect(flow.dispatch(FlowAction.OpenAtlas)).toBe(true);
+    expect(flow.dispatch(FlowAction.ReturnToTitle)).toBe(true);
+    expect(flow.phase).toBe(GamePhase.Title);
+  });
+
+  it('opens the atlas from the pause menu and from the victory screen', () => {
+    const flow = new GameFlow();
+    flow.dispatch(FlowAction.Start);
+    flow.dispatch(FlowAction.Pause);
+    expect(flow.dispatch(FlowAction.OpenAtlas)).toBe(true);
+    flow.dispatch(FlowAction.Start);
+    flow.dispatch(FlowAction.BeginFinale);
+    flow.dispatch(FlowAction.Complete);
+    expect(flow.dispatch(FlowAction.OpenAtlas)).toBe(true);
+    expect(flow.phase).toBe(GamePhase.Atlas);
+  });
+
   it('can return to the title from the pause menu and the victory screen', () => {
     const flow = new GameFlow();
     flow.dispatch(FlowAction.Start);

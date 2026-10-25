@@ -29,6 +29,40 @@ export const SHIFT = {
   maxNudge: 10,
 } as const;
 
+export const DASH = {
+  speed: 560,
+  duration: 0.16,
+  exitSpeed: 300,
+} as const;
+
+export const AIR_JUMP = {
+  velocity: 560,
+} as const;
+
+export const GLIDE = {
+  fallSpeed: 105,
+  brake: 3200,
+} as const;
+
+export const WALL = {
+  slideSpeed: 140,
+  kickSpeed: 300,
+  kickVelocity: 590,
+  lockTime: 0.16,
+  probe: 2,
+  inset: 6,
+} as const;
+
+export const UPDRAFT = {
+  lift: 2600,
+  maxRise: 300,
+} as const;
+
+export const CRUMBLE = {
+  delay: 0.5,
+  respawn: 2.6,
+} as const;
+
 export const INTERACT_RADIUS = 56;
 
 export const FRAGMENT_RADIUS = 14;

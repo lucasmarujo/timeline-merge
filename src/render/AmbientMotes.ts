@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { GAME_HEIGHT, HALF_WIDTH } from '../config';
 import { Timeline } from '../core/enums';
 import { toTint } from './art/color';
-import { paletteFor } from './art/palette';
+import type { Palette } from './art/palette';
 import { FxTexture } from './art/textureKeys';
 import { DEPTH } from './depths';
 
@@ -19,17 +19,17 @@ interface Mote {
 
 const MOTE_COUNT = 34;
 const MARGIN = 16;
-const WRAP_WIDTH = HALF_WIDTH + MARGIN * 2;
 const WRAP_HEIGHT = GAME_HEIGHT + MARGIN * 2;
 
 export class AmbientMotes {
   private readonly motes: Mote[] = [];
   private time = 0;
+  private viewWidth = HALF_WIDTH;
 
-  constructor(scene: Phaser.Scene, layer: Phaser.GameObjects.Layer, timeline: Timeline) {
-    const palette = paletteFor(timeline);
+  constructor(scene: Phaser.Scene, layer: Phaser.GameObjects.Layer, timeline: Timeline, palette: Palette, viewWidth: number = HALF_WIDTH) {
     const isDawn = timeline === Timeline.Dawn;
     const tint = toTint(palette.mote);
+    this.viewWidth = viewWidth;
     for (let index = 0; index < MOTE_COUNT; index++) {
       const parallax = Phaser.Math.FloatBetween(0.45, 1.35);
       const image = scene.add
@@ -42,7 +42,7 @@ export class AmbientMotes {
       layer.add(image);
       this.motes.push({
         image,
-        worldX: Phaser.Math.FloatBetween(0, HALF_WIDTH),
+        worldX: Phaser.Math.FloatBetween(0, viewWidth),
         worldY: Phaser.Math.FloatBetween(0, GAME_HEIGHT),
         velocityX: Phaser.Math.FloatBetween(-8, 8) + (isDawn ? -4 : 0),
         velocityY: isDawn ? Phaser.Math.FloatBetween(-10, 4) : Phaser.Math.FloatBetween(-26, -10),
@@ -53,15 +53,20 @@ export class AmbientMotes {
     }
   }
 
+  resize(viewWidth: number): void {
+    this.viewWidth = viewWidth;
+  }
+
   update(dt: number, scrollX: number, scrollY: number): void {
     this.time += dt;
+    const wrapWidth = this.viewWidth + MARGIN * 2;
     for (const mote of this.motes) {
       mote.worldX += (mote.velocityX + Math.sin(this.time * 0.8 + mote.phase) * 6) * dt;
       mote.worldY += mote.velocityY * dt;
       const screenX = mote.worldX - scrollX * mote.parallax;
       const screenY = mote.worldY - scrollY * mote.parallax;
-      if (screenX < -MARGIN) mote.worldX += WRAP_WIDTH * Math.ceil((-MARGIN - screenX) / WRAP_WIDTH);
-      if (screenX > HALF_WIDTH + MARGIN) mote.worldX -= WRAP_WIDTH * Math.ceil((screenX - HALF_WIDTH - MARGIN) / WRAP_WIDTH);
+      if (screenX < -MARGIN) mote.worldX += wrapWidth * Math.ceil((-MARGIN - screenX) / wrapWidth);
+      if (screenX > this.viewWidth + MARGIN) mote.worldX -= wrapWidth * Math.ceil((screenX - this.viewWidth - MARGIN) / wrapWidth);
       if (screenY < -MARGIN) mote.worldY += WRAP_HEIGHT * Math.ceil((-MARGIN - screenY) / WRAP_HEIGHT);
       if (screenY > GAME_HEIGHT + MARGIN) mote.worldY -= WRAP_HEIGHT * Math.ceil((screenY - GAME_HEIGHT - MARGIN) / WRAP_HEIGHT);
       mote.image.setPosition(mote.worldX, mote.worldY);

@@ -1,7 +1,6 @@
 import Phaser from 'phaser';
-import { GAME_HEIGHT, GAME_WIDTH, SCENE_KEYS } from '../config';
-import { LEVEL_1 } from '../levels/level1';
-import { generateArt } from '../render/art/ArtLibrary';
+import { GAME_HEIGHT, SCENE_KEYS } from '../config';
+import { generateSharedArt } from '../render/art/ArtLibrary';
 import { showFatalError } from '../ui/fatalError';
 import { bodyStyle } from '../ui/textStyles';
 
@@ -14,15 +13,15 @@ export class BootScene extends Phaser.Scene {
 
   create(): void {
     this.cameras.main.setBackgroundColor('#07060d');
-    this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, 2, GAME_HEIGHT, 0xd9c2ff, 0.9);
-    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 60, 'Weaving two realities…', bodyStyle(24)).setOrigin(0.5);
+    this.add.rectangle(this.scale.width / 2, GAME_HEIGHT / 2, 2, GAME_HEIGHT, 0xd9c2ff, 0.9);
+    this.add.text(this.scale.width / 2, GAME_HEIGHT / 2 + 60, 'Weaving two realities…', bodyStyle(24)).setOrigin(0.5);
     this.game.events.once(Phaser.Core.Events.POST_RENDER, () => this.generate());
   }
 
   private generate(): void {
     try {
       const started = performance.now();
-      const art = generateArt(this, LEVEL_1);
+      const art = generateSharedArt(this);
       this.registry.set(ART_REGISTRY_KEY, art);
       console.info(`[Timeline Merge] Generated artwork in ${Math.round(performance.now() - started)} ms.`);
       this.scene.start(SCENE_KEYS.game);

@@ -29,10 +29,64 @@ export enum SolidStyle {
   Floor = 'floor',
   Rubble = 'rubble',
   Tower = 'tower',
+  Drifter = 'drifter',
+  Crumble = 'crumble',
 }
 
 export enum HazardStyle {
   Thorns = 'thorns',
+  Wraith = 'wraith',
+}
+
+export enum MotionAxis {
+  X = 'x',
+  Y = 'y',
+}
+
+export enum ZoneKind {
+  Anchor = 'anchor',
+  Updraft = 'updraft',
+  Pulse = 'pulse',
+}
+
+export enum ExitKind {
+  Gate = 'gate',
+  Shattered = 'shattered',
+}
+
+export enum FragmentKind {
+  Memory = 'memory',
+  Shard = 'shard',
+}
+
+export enum Ability {
+  Shift = 'shift',
+  Interact = 'interact',
+  AirShift = 'airShift',
+  RiftLeap = 'riftLeap',
+  Dash = 'dash',
+  Glide = 'glide',
+  WallGrip = 'wallGrip',
+  RiftChain = 'riftChain',
+}
+
+export enum Discovery {
+  Shift = 'shift',
+  Interact = 'interact',
+  Thorns = 'thorns',
+  AirShift = 'airShift',
+  Bells = 'bells',
+  RiftLeap = 'riftLeap',
+  Chains = 'chains',
+  Dash = 'dash',
+  Drifters = 'drifters',
+  Glide = 'glide',
+  Wraiths = 'wraiths',
+  WallGrip = 'wallGrip',
+  Crumble = 'crumble',
+  Pulse = 'pulse',
+  RiftChain = 'riftChain',
+  Unraveling = 'unraveling',
 }
 
 export enum MechanismKind {
@@ -69,16 +123,22 @@ export enum SimStatus {
   Alive = 'alive',
   Dead = 'dead',
   Finale = 'finale',
+  Exited = 'exited',
 }
 
 export enum DeathCause {
   Fall = 'fall',
   Hazard = 'hazard',
+  Crush = 'crush',
+  Unraveled = 'unraveled',
 }
 
 export enum SwitchRejection {
   Blocked = 'blocked',
   Hazard = 'hazard',
+  Anchored = 'anchored',
+  Grounded = 'grounded',
+  Locked = 'locked',
 }
 
 export enum InteractionKind {
@@ -105,20 +165,34 @@ export enum SimEventType {
   PortalUnstable = 'portalUnstable',
   PortalActivated = 'portalActivated',
   AreaEntered = 'areaEntered',
+  Dashed = 'dashed',
+  AirJumped = 'airJumped',
+  WallJumped = 'wallJumped',
+  Crumbled = 'crumbled',
+  Reformed = 'reformed',
+  PulseShifted = 'pulseShifted',
+  ExitReached = 'exitReached',
+  UnravelingAwakened = 'unravelingAwakened',
 }
 
 export enum GamePhase {
   Title = 'title',
+  Atlas = 'atlas',
+  Briefing = 'briefing',
   Playing = 'playing',
   Paused = 'paused',
+  LevelComplete = 'levelComplete',
   Finale = 'finale',
   Victory = 'victory',
 }
 
 export enum FlowAction {
   Start = 'start',
+  Brief = 'brief',
+  OpenAtlas = 'openAtlas',
   Pause = 'pause',
   Resume = 'resume',
+  Exit = 'exit',
   BeginFinale = 'beginFinale',
   Complete = 'complete',
   PlayAgain = 'playAgain',

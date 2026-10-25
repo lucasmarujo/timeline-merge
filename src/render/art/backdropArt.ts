@@ -2,7 +2,7 @@ import { GAME_HEIGHT, HALF_WIDTH } from '../../config';
 import { mix, shade, withAlpha } from './color';
 import type { Palette } from './palette';
 import { PixelCanvas, type Point } from './PixelCanvas';
-import { Rng } from './rng';
+import { Rng } from '../../core/rng';
 import { isDawn, softGlow, undersideProfile } from './stonework';
 
 export enum BackdropLayerId {
@@ -27,10 +27,10 @@ export const BACKDROP_LAYERS: readonly BackdropLayerSpec[] = [
 
 export const SKY_FACTOR = 4;
 
-export function backdropWorldSize(spec: BackdropLayerSpec, worldWidth: number, worldHeight: number): { width: number; height: number } {
+export function backdropWorldSize(spec: BackdropLayerSpec, worldWidth: number, worldHeight: number, viewWidth: number = HALF_WIDTH): { width: number; height: number } {
   return {
-    width: spec.scroll * (worldWidth - HALF_WIDTH) + HALF_WIDTH + 96,
-    height: spec.scroll * (worldHeight - GAME_HEIGHT) + GAME_HEIGHT + 64,
+    width: spec.scroll * Math.max(0, worldWidth - viewWidth) + viewWidth + 96,
+    height: spec.scroll * Math.max(0, worldHeight - GAME_HEIGHT) + GAME_HEIGHT + 64,
   };
 }
 

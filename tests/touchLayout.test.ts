@@ -8,6 +8,7 @@ import {
   padAxis,
   TOUCH_METRICS,
   TouchButton,
+  type ActionButton,
   type Box,
   type Circle,
   type Insets,
@@ -184,6 +185,16 @@ describe('hitActionButton', () => {
     const shift = layout.buttons[TouchButton.Shift];
     expect(hitActionButton(layout, jump.x - jump.radius * 0.9, jump.y)).toBe(TouchButton.Jump);
     expect(hitActionButton(layout, shift.x + shift.radius * 0.9, shift.y)).toBe(TouchButton.Shift);
+  });
+
+  it('ignores buttons for abilities that have not awakened yet', () => {
+    const dash = layout.buttons[TouchButton.Dash];
+    const shift = layout.buttons[TouchButton.Shift];
+    const jumpOnly = new Set<ActionButton>([TouchButton.Jump]);
+    expect(hitActionButton(layout, dash.x, dash.y, jumpOnly)).toBeNull();
+    expect(hitActionButton(layout, shift.x, shift.y, jumpOnly)).toBeNull();
+    expect(hitActionButton(layout, layout.buttons[TouchButton.Jump].x, layout.buttons[TouchButton.Jump].y, jumpOnly)).toBe(TouchButton.Jump);
+    expect(hitActionButton(layout, dash.x, dash.y)).toBe(TouchButton.Dash);
   });
 
   it('ignores touches away from every button', () => {

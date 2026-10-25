@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { CAMERA, GAME_HEIGHT, HALF_WIDTH } from '../config';
+import { CAMERA, GAME_HEIGHT, GAME_WIDTH } from '../config';
 import { Timeline } from '../core/enums';
 import { clamp } from '../core/geometry';
 import type { Rect } from '../core/types';
@@ -25,14 +25,17 @@ export class CameraRig {
   private readonly grading: Partial<Record<Timeline, Phaser.FX.ColorMatrix>> = {};
   private readonly barrel: Partial<Record<Timeline, Phaser.FX.Barrel>> = {};
   private pulseTime = 1;
+  private halfWidth = GAME_WIDTH / 2;
 
   constructor(
     scene: Phaser.Scene,
-    private readonly bounds: Rect,
+    private bounds: Rect,
+    gameWidth: number = GAME_WIDTH,
   ) {
+    this.halfWidth = gameWidth / 2;
     const dawn = scene.cameras.main;
-    dawn.setViewport(0, 0, HALF_WIDTH, GAME_HEIGHT);
-    const eclipse = scene.cameras.add(HALF_WIDTH, 0, HALF_WIDTH, GAME_HEIGHT);
+    dawn.setViewport(0, 0, this.halfWidth, GAME_HEIGHT);
+    const eclipse = scene.cameras.add(this.halfWidth, 0, this.halfWidth, GAME_HEIGHT);
     dawn.setBackgroundColor('#cfd6d3');
     eclipse.setBackgroundColor('#0b0918');
     this.cameras = { [Timeline.Dawn]: dawn, [Timeline.Eclipse]: eclipse };
@@ -45,6 +48,22 @@ export class CameraRig {
       }
     }
     this.applyGrading();
+  }
+
+  get viewWidth(): number {
+    return this.halfWidth;
+  }
+
+  setBounds(bounds: Rect): void {
+    this.bounds = bounds;
+    this.applyScroll();
+  }
+
+  resize(gameWidth: number): void {
+    this.halfWidth = gameWidth / 2;
+    this.cameras[Timeline.Dawn].setViewport(0, 0, this.halfWidth, GAME_HEIGHT);
+    this.cameras[Timeline.Eclipse].setViewport(this.halfWidth, 0, this.halfWidth, GAME_HEIGHT);
+    this.applyScroll();
   }
 
   get hasPostFx(): boolean {
@@ -124,12 +143,13 @@ export class CameraRig {
   }
 
   private applyScroll(): void {
-    const maxX = this.bounds.x + this.bounds.w - HALF_WIDTH;
-    const maxY = this.bounds.y + this.bounds.h - GAME_HEIGHT;
-    const offset = (this.merge * HALF_WIDTH) / 2;
+    const half = this.halfWidth;
+    const maxX = Math.max(this.bounds.x, this.bounds.x + this.bounds.w - half);
+    const maxY = Math.max(this.bounds.y, this.bounds.y + this.bounds.h - GAME_HEIGHT);
+    const offset = (this.merge * half) / 2;
     const scrollY = clamp(Math.round(this.focusY - GAME_HEIGHT * CAMERA.focusRatioY), this.bounds.y, maxY);
-    const dawnX = clamp(Math.round(this.focusX - offset - HALF_WIDTH / 2), this.bounds.x, maxX);
-    const eclipseX = clamp(Math.round(this.focusX + offset - HALF_WIDTH / 2), this.bounds.x, maxX);
+    const dawnX = clamp(Math.round(this.focusX - offset - half / 2), this.bounds.x, maxX);
+    const eclipseX = clamp(Math.round(this.focusX + offset - half / 2), this.bounds.x, maxX);
     this.cameras[Timeline.Dawn].setScroll(dawnX, scrollY);
     this.cameras[Timeline.Eclipse].setScroll(eclipseX, scrollY);
   }

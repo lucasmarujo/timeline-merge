@@ -10,6 +10,7 @@ import { COLORS, displayStyle } from './textStyles';
 const SLOT_Y = 38;
 const SLOT_SPACING = 40;
 const LABEL_OFFSET = 78;
+const LEVEL_LABEL_Y = 68;
 
 interface Slot {
   graphics: Phaser.GameObjects.Graphics;
@@ -23,16 +24,21 @@ export class Hud {
   private readonly dawnLabel: Phaser.GameObjects.Text;
   private readonly eclipseLabel: Phaser.GameObjects.Text;
   private readonly glyphs: Phaser.GameObjects.Graphics;
+  private readonly levelLabel: Phaser.GameObjects.Text;
   private readonly group: FadingGroup;
+  private band: Phaser.GameObjects.Image;
+  private visibleSlots = FRAGMENTS_REQUIRED;
   private dawnEmphasis = 1;
   private eclipseEmphasis = 0;
 
   constructor(scene: Phaser.Scene) {
     const band = scene.add.image(GAME_WIDTH / 2, 0, FxTexture.Fade).setOrigin(0.5, 0).setFlipY(true).setDisplaySize(GAME_WIDTH, 90).setTint(0x000000).setAlpha(0.3);
+    this.band = band;
     this.glyphs = scene.add.graphics();
+    this.levelLabel = scene.add.text(SEAM_X, LEVEL_LABEL_Y, '', displayStyle(11, COLORS.mist)).setOrigin(0.5).setLetterSpacing(5);
     this.dawnLabel = scene.add.text(SEAM_X - LABEL_OFFSET, SLOT_Y, 'DAWN', displayStyle(15, COLORS.gold)).setOrigin(1, 0.5).setLetterSpacing(4);
     this.eclipseLabel = scene.add.text(SEAM_X + LABEL_OFFSET, SLOT_Y, 'ECLIPSE', displayStyle(15, COLORS.violet)).setOrigin(0, 0.5).setLetterSpacing(4);
-    const items: Fadeable[] = [band, this.glyphs, this.dawnLabel, this.eclipseLabel];
+    const items: Fadeable[] = [band, this.glyphs, this.dawnLabel, this.eclipseLabel, this.levelLabel];
     for (let index = 0; index < FRAGMENTS_REQUIRED; index++) {
       const x = SEAM_X + (index - 1) * SLOT_SPACING;
       const glow = scene.add.image(x, SLOT_Y, FxTexture.GlowTight).setBlendMode(Phaser.BlendModes.ADD).setTint(toTint('#c69bff')).setScale(0.9);
@@ -46,6 +52,21 @@ export class Hud {
 
   show(): void {
     this.group.show();
+  }
+
+  configure(label: string, slots: number): void {
+    this.levelLabel.setText(label);
+    this.visibleSlots = Math.max(1, Math.min(FRAGMENTS_REQUIRED, slots));
+    this.slots.forEach((slot, index) => {
+      const x = SEAM_X + (index - (this.visibleSlots - 1) / 2) * SLOT_SPACING;
+      slot.graphics.setX(x);
+      slot.glow.setX(x);
+    });
+    this.setFragments(0);
+  }
+
+  setWidth(width: number): void {
+    this.band.setDisplaySize(width, 90);
   }
 
   hide(): void {
@@ -77,7 +98,9 @@ export class Hud {
         slot.pop = Math.max(0, slot.pop - dt * 1.6);
         needsRedraw = true;
       }
-      slot.glow.setAlpha(base * (slot.filled ? 0.55 + 0.25 * Math.sin(time * 2.4 + index) + slot.pop * 0.6 : 0));
+      const shown = index < this.visibleSlots;
+      slot.graphics.setVisible(shown && base > 0.001);
+      slot.glow.setAlpha(shown ? base * (slot.filled ? 0.55 + 0.25 * Math.sin(time * 2.4 + index) + slot.pop * 0.6 : 0) : 0);
       slot.graphics.setScale(1 + slot.pop * 0.6);
     });
     if (needsRedraw) this.drawSlots();

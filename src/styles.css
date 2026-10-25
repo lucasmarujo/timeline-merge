@@ -272,3 +272,26 @@ body {
     display: none;
   }
 }
+
+.touch-button.is-locked {
+  display: none;
+}
+
+.touch-button.is-new {
+  animation: touch-unlock 0.9s ease-out 3;
+}
+
+@keyframes touch-unlock {
+  0% {
+    transform: scale(0.6);
+    box-shadow: 0 0 0 rgba(var(--accent-rgb), 0);
+  }
+  45% {
+    transform: scale(1.18);
+    box-shadow: 0 0 calc(34px * var(--unit)) rgba(var(--accent-rgb), 0.95);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 calc(12px * var(--unit)) rgba(var(--accent-rgb), 0.4);
+  }
+}

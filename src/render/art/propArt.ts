@@ -1,7 +1,7 @@
 import { mix, withAlpha } from './color';
 import type { Palette } from './palette';
 import { PixelCanvas, type Point } from './PixelCanvas';
-import { Rng } from './rng';
+import { Rng } from '../../core/rng';
 import { isDawn } from './stonework';
 
 export const PORTAL_RING_RADIUS = 64;
@@ -263,5 +263,80 @@ export function paintPortalCore(): PixelCanvas {
     pc.ctx.stroke();
   }
   pc.ctx.restore();
+  return pc;
+}
+
+export const WRAITH_FRAME = { width: 26, height: 40 } as const;
+export const WRAITH_FRAME_COUNT = 4;
+
+export function paintWraithSheet(palette: Palette): { sheet: PixelCanvas; glow: PixelCanvas } {
+  const { width, height } = WRAITH_FRAME;
+  const sheet = new PixelCanvas(width * WRAITH_FRAME_COUNT, height);
+  const glow = new PixelCanvas(width * WRAITH_FRAME_COUNT, height);
+  const dawn = isDawn(palette);
+  const body = dawn ? palette.cloudLight : palette.stoneMid;
+  const shadow = dawn ? palette.cloudShade : palette.stoneDark;
+  const hollow = dawn ? palette.accentDeep : palette.ink;
+  const eye = dawn ? palette.accent : palette.accentBright;
+  const bobs = [0, 1, 2, 1];
+  const sways = [0, 1, 0, -1];
+  for (let frame = 0; frame < WRAITH_FRAME_COUNT; frame++) {
+    const ox = frame * width;
+    const bob = bobs[frame] as number;
+    const sway = sways[frame] as number;
+    const robe: Point[] = [
+      { x: ox + 6, y: 13 + bob },
+      { x: ox + 20, y: 13 + bob },
+      { x: ox + 23, y: 27 + bob },
+      { x: ox + 21 + sway, y: 32 + bob },
+      { x: ox + 18 + sway, y: 38 },
+      { x: ox + 15 + sway, y: 32 + bob },
+      { x: ox + 13 + sway, y: 39 },
+      { x: ox + 11 + sway, y: 32 + bob },
+      { x: ox + 8 + sway, y: 37 },
+      { x: ox + 5 + sway, y: 31 + bob },
+      { x: ox + 3, y: 26 + bob },
+    ];
+    sheet.poly(robe, body);
+    sheet.poly(
+      [
+        { x: ox + 13, y: 13 + bob },
+        { x: ox + 20, y: 13 + bob },
+        { x: ox + 23, y: 27 + bob },
+        { x: ox + 18 + sway, y: 38 },
+        { x: ox + 13 + sway, y: 39 },
+      ],
+      shadow,
+    );
+    sheet.ellipse(ox + 13, 9 + bob, 7, 7.5, body);
+    sheet.ellipse(ox + 14, 9 + bob, 4, 6, shadow);
+    sheet.ellipse(ox + 13, 10 + bob, 4.5, 4.5, hollow);
+    sheet.line(ox + 6, 15 + bob, ox + 2, 23 + bob + sway, shadow);
+    sheet.line(ox + 20, 15 + bob, ox + 24, 23 + bob - sway, shadow);
+    sheet.px(ox + 11, 10 + bob, eye);
+    sheet.px(ox + 15, 10 + bob, eye);
+    sheet.px(ox + 11, 11 + bob, palette.emissiveBright);
+    sheet.px(ox + 15, 11 + bob, palette.emissiveBright);
+    glow.radial(ox + 13, 11 + bob, 7, [
+      { at: 0, color: withAlpha(palette.emissive, 0.95) },
+      { at: 1, color: withAlpha(palette.emissive, 0) },
+    ]);
+    glow.radial(ox + 13, 22 + bob, 13, [
+      { at: 0, color: withAlpha(palette.emissive, dawn ? 0.25 : 0.4) },
+      { at: 1, color: withAlpha(palette.emissive, 0) },
+    ]);
+  }
+  sheet.outline(palette.ink, dawn ? 0.45 : 0.85);
+  return { sheet, glow };
+}
+
+export function paintChainLink(palette: Palette): PixelCanvas {
+  const pc = new PixelCanvas(8, 14);
+  pc.ellipse(4, 4, 3, 4, palette.metal);
+  pc.erase(() => pc.ellipse(4, 4, 1.5, 2.5, '#000'));
+  pc.rect(3, 8, 2, 6, palette.metalLight);
+  pc.rect(3, 8, 1, 6, palette.metal);
+  pc.px(5, 3, palette.accent);
+  pc.outline(palette.ink, 0.6);
   return pc;
 }

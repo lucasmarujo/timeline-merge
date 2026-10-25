@@ -15,6 +15,7 @@ export const FxTexture = {
   Fade: 'fx-fade',
   Fog: 'fx-fog',
   PortalCore: 'portal-core',
+  VoidEdge: 'fx-void-edge',
 } as const;
 
 export const TextureKey = {
@@ -36,7 +37,13 @@ export const TextureKey = {
   cloudBand: (timeline: Timeline): string => `clouds-${timeline}`,
   backdrop: (layer: BackdropLayerId, timeline: Timeline): string => `backdrop-${layer}-${timeline}`,
   waterfall: (timeline: Timeline): string => `waterfall-${timeline}`,
+  wraith: (timeline: Timeline): string => `wraith-${timeline}`,
+  chainLink: (timeline: Timeline): string => `chain-link-${timeline}`,
 };
+
+export function wraithAnimationKey(timeline: Timeline): string {
+  return `wraith-${timeline}-drift`;
+}
 
 export function animationKey(timeline: Timeline, animation: TravelerAnimation): string {
   return `traveler-${timeline}-${animation}`;

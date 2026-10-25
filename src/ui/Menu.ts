@@ -45,16 +45,29 @@ export class Menu<T extends string> {
   }
 }
 
+export enum TitleOption {
+  Continue = 'continue',
+  Atlas = 'atlas',
+}
+
 export enum PauseOption {
   Resume = 'resume',
   RestartCheckpoint = 'restartCheckpoint',
   RestartLevel = 'restartLevel',
+  Atlas = 'atlas',
   Sound = 'sound',
   Title = 'title',
 }
 
+export enum CompleteOption {
+  Continue = 'continue',
+  Replay = 'replay',
+  Atlas = 'atlas',
+}
+
 export enum VictoryOption {
-  PlayAgain = 'playAgain',
+  Continue = 'continue',
+  Atlas = 'atlas',
   Title = 'title',
 }
 
@@ -62,21 +75,49 @@ export function soundLabel(muted: boolean): string {
   return `Sound: ${muted ? 'Off' : 'On'}`;
 }
 
+export function continueLabel(level: number, fresh: boolean): string {
+  return fresh ? 'Begin the Journey' : `Continue · Echo ${level}`;
+}
+
+export function createTitleMenu(level: number, fresh: boolean): Menu<TitleOption> {
+  return new Menu<TitleOption>([
+    { id: TitleOption.Continue, label: continueLabel(level, fresh) },
+    { id: TitleOption.Atlas, label: 'Atlas of Echoes' },
+  ]);
+}
+
 export function createPauseMenu(muted: boolean): Menu<PauseOption> {
   return new Menu<PauseOption>([
     { id: PauseOption.Resume, label: 'Resume' },
     { id: PauseOption.RestartCheckpoint, label: 'Return to Checkpoint' },
-    { id: PauseOption.RestartLevel, label: 'Restart Level' },
+    { id: PauseOption.RestartLevel, label: 'Restart Echo' },
+    { id: PauseOption.Atlas, label: 'Atlas of Echoes' },
     { id: PauseOption.Sound, label: soundLabel(muted) },
     { id: PauseOption.Title, label: 'Quit to Title' },
   ]);
 }
 
-export function createVictoryMenu(): Menu<VictoryOption> {
-  return new Menu<VictoryOption>([
-    { id: VictoryOption.PlayAgain, label: 'Play Again' },
-    { id: VictoryOption.Title, label: 'Return to Title' },
-  ]);
+export function createCompleteMenu(hasNext: boolean): Menu<CompleteOption> {
+  const items = [
+    { id: CompleteOption.Continue, label: 'Next Echo' },
+    { id: CompleteOption.Replay, label: 'Replay Echo' },
+    { id: CompleteOption.Atlas, label: 'Atlas of Echoes' },
+  ];
+  return new Menu<CompleteOption>(hasNext ? items : items.slice(1));
+}
+
+export function createVictoryMenu(final: boolean): Menu<VictoryOption> {
+  return new Menu<VictoryOption>(
+    final
+      ? [
+          { id: VictoryOption.Atlas, label: 'Atlas of Echoes' },
+          { id: VictoryOption.Title, label: 'Return to Title' },
+        ]
+      : [
+          { id: VictoryOption.Continue, label: 'Next Chapter' },
+          { id: VictoryOption.Atlas, label: 'Atlas of Echoes' },
+        ],
+  );
 }
 
 export function formatDuration(seconds: number): string {

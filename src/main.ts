@@ -4,6 +4,7 @@ import '@fontsource/cormorant-garamond/500.css';
 import '@fontsource/cormorant-garamond/500-italic.css';
 import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from './config';
+import { computeGameWidth } from './render/viewport';
 import { BootScene } from './scenes/BootScene';
 import { GameScene } from './scenes/GameScene';
 import { UIScene } from './scenes/UIScene';
@@ -54,6 +55,14 @@ async function boot(): Promise<void> {
       touch: true,
     },
     scene: [BootScene, GameScene, UIScene],
+  });
+  const fitWidth = (): void => {
+    const width = computeGameWidth(game.scale.parentSize.width, game.scale.parentSize.height);
+    if (width !== game.scale.gameSize.width) game.scale.setGameSize(width, GAME_HEIGHT);
+  };
+  game.events.once(Phaser.Core.Events.READY, () => {
+    fitWidth();
+    game.scale.on(Phaser.Scale.Events.RESIZE, fitWidth);
   });
   document.getElementById('loading')?.remove();
   window.addEventListener('beforeunload', () => game.destroy(true));

@@ -5,10 +5,11 @@ export enum TouchButton {
   Jump = 'jump',
   Shift = 'shift',
   Interact = 'interact',
+  Dash = 'dash',
   Pause = 'pause',
 }
 
-export const ACTION_BUTTONS = [TouchButton.Jump, TouchButton.Shift, TouchButton.Interact] as const;
+export const ACTION_BUTTONS = [TouchButton.Jump, TouchButton.Shift, TouchButton.Interact, TouchButton.Dash] as const;
 
 export type ActionButton = (typeof ACTION_BUTTONS)[number];
 
@@ -104,6 +105,7 @@ export function computeTouchLayout(viewport: TouchViewport): TouchLayout {
   const jump: Circle = { x: width - safe.right - margin - jumpRadius, y: baseline - jumpRadius, radius: jumpRadius };
   const shift: Circle = { x: jump.x - jumpRadius - gap - shiftRadius, y: baseline - shiftRadius, radius: shiftRadius };
   const interact: Circle = { x: jump.x, y: jump.y - jumpRadius - gap - interactRadius, radius: interactRadius };
+  const dash: Circle = { x: shift.x, y: shift.y - shiftRadius - gap - interactRadius, radius: interactRadius };
   const pause: Circle = { x: width - safe.right - margin - pauseRadius, y: safe.top + margin + pauseRadius, radius: pauseRadius };
   const pad: Box = { x: safe.left + margin, y: jump.y - padHeight / 2, width: padWidth, height: padHeight };
   const reach = metrics.padReach * unit;
@@ -114,11 +116,12 @@ export function computeTouchLayout(viewport: TouchViewport): TouchLayout {
     gameInsets: { top, bottom: spareY - top },
     pad,
     padZone,
-    actionZone: clampBox(boundsOf([jump, shift, interact], metrics.hitSlop), width, height),
+    actionZone: clampBox(boundsOf([jump, shift, interact, dash], metrics.hitSlop), width, height),
     buttons: {
       [TouchButton.Jump]: jump,
       [TouchButton.Shift]: shift,
       [TouchButton.Interact]: interact,
+      [TouchButton.Dash]: dash,
       [TouchButton.Pause]: pause,
     },
   };
@@ -138,10 +141,11 @@ export function knobTravel(layout: TouchLayout, x: number): number {
   return clamp(padOffset(layout, x), -limit, limit);
 }
 
-export function hitActionButton(layout: TouchLayout, x: number, y: number): ActionButton | null {
+export function hitActionButton(layout: TouchLayout, x: number, y: number, enabled: ReadonlySet<ActionButton> = new Set(ACTION_BUTTONS)): ActionButton | null {
   let closest: ActionButton | null = null;
   let closestDistance = Number.POSITIVE_INFINITY;
   for (const button of ACTION_BUTTONS) {
+    if (!enabled.has(button)) continue;
     const circle = layout.buttons[button];
     const distance = Math.hypot(x - circle.x, y - circle.y);
     if (distance <= circle.radius * TOUCH_METRICS.hitSlop && distance < closestDistance) {

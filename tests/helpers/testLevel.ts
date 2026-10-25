@@ -1,5 +1,5 @@
 import { FIXED_DT } from '../../src/core/constants';
-import { Presence, SolidStyle } from '../../src/core/enums';
+import { ExitKind, Presence, SolidStyle } from '../../src/core/enums';
 import { IDLE_INPUT, type GameSimulation, type SimEvent, type SimInput } from '../../src/core/simulation';
 import type { LevelDef, SolidDef } from '../../src/core/types';
 
@@ -28,7 +28,9 @@ export function makeLevel(overrides: Partial<LevelDef> = {}): LevelDef {
     hints: [],
     areas: [],
     decor: [],
+    zones: [],
     portal: {
+      kind: ExitKind.Shattered,
       x: 1800,
       y: 400,
       radius: 100,

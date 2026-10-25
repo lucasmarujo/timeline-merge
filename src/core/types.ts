@@ -1,10 +1,14 @@
 import type {
   DecorKind,
   DecorLayer,
+  ExitKind,
+  FragmentKind,
   HazardStyle,
   MechanismKind,
+  MotionAxis,
   Presence,
   SolidStyle,
+  ZoneKind,
 } from './enums';
 
 export interface Vec2 {
@@ -24,26 +28,56 @@ export interface Condition {
   unless?: string;
 }
 
+export interface ToneShift {
+  hue: number;
+  saturation: number;
+  light: number;
+}
+
+export interface Motion {
+  axis: MotionAxis;
+  range: number;
+  period: number;
+  phase: number;
+}
+
 export interface SolidDef extends Rect {
   id: string;
   presence: Presence;
   style: SolidStyle;
   condition?: Condition;
+  motion?: Motion;
+  crumble?: boolean;
 }
 
 export interface HazardDef extends Rect {
   id: string;
   presence: Presence;
   style: HazardStyle;
+  motion?: Motion;
 }
 
 export interface FragmentDef {
   id: string;
+  kind: FragmentKind;
   presence: Presence;
   x: number;
   y: number;
   title: string;
-  memory: string;
+  memory?: string;
+}
+
+export interface ZoneDef extends Rect {
+  id: string;
+  kind: ZoneKind;
+  presence: Presence;
+  period?: number;
+}
+
+export interface ChaseDef {
+  triggerX: number;
+  speed: number;
+  lead: number;
 }
 
 export interface MechanismDef {
@@ -89,6 +123,7 @@ export interface DecorDef {
 }
 
 export interface PortalDef {
+  kind: ExitKind;
   x: number;
   y: number;
   radius: number;
@@ -110,5 +145,7 @@ export interface LevelDef {
   hints: readonly HintDef[];
   areas: readonly AreaDef[];
   decor: readonly DecorDef[];
+  zones: readonly ZoneDef[];
+  chase?: ChaseDef;
   portal: PortalDef;
 }

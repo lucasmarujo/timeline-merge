@@ -1,16 +1,19 @@
 import Phaser from 'phaser';
-import { Timeline } from '../../core/enums';
+import { HazardStyle, Timeline } from '../../core/enums';
+import { hashString, Rng } from '../../core/rng';
 import { existsIn } from '../../core/timeline';
 import type { LevelDef } from '../../core/types';
+import { MAX_HALF_WIDTH } from '../viewport';
 import { BACKDROP_LAYERS, backdropWorldSize, paintCloudBand, paintFarLayer, paintFogBand, paintIslandLayer, paintRuinsLayer, paintSky, BackdropLayerId } from './backdropArt';
 import { paintTravelerSheet, TRAVELER_FRAME, TRAVELER_FRAME_COUNT, TRAVELER_SEQUENCES, TravelerAnimation } from './characterArt';
 import { paintDecor, paintWaterfallTile } from './decorArt';
-import { paintLightShaft, paintMote, paintPixel, paintRing, paintSeamProfile, paintSoftGlow, paintSpark, paintVerticalFade, paintVignette } from './fxArt';
-import { paletteFor } from './palette';
+import { paintLightShaft, paintMote, paintPixel, paintRing, paintSeamProfile, paintSoftGlow, paintSpark, paintVerticalFade, paintVignette, paintVoidEdge } from './fxArt';
+import { paletteFor, type Palette } from './palette';
 import type { PixelCanvas } from './PixelCanvas';
 import {
   paintBell,
   paintBellFrame,
+  paintChainLink,
   paintCheckpoint,
   paintCrankBase,
   paintCrankWheel,
@@ -19,11 +22,13 @@ import {
   paintPortalRing,
   paintPortalRunes,
   paintPortalShard,
+  paintWraithSheet,
+  WRAITH_FRAME,
+  WRAITH_FRAME_COUNT,
 } from './propArt';
-import { Rng } from './rng';
 import type { PaintedSprite } from './stonework';
 import { paintHazard, paintSolid } from './terrainArt';
-import { animationKey, FxTexture, TextureKey } from './textureKeys';
+import { animationKey, FxTexture, TextureKey, wraithAnimationKey } from './textureKeys';
 
 export interface SpriteInfo {
   key: string;
@@ -33,6 +38,8 @@ export interface SpriteInfo {
   height: number;
   glowKey: string | null;
 }
+
+export type LevelPalettes = Readonly<Record<Timeline, Palette>>;
 
 const TIMELINES = [Timeline.Dawn, Timeline.Eclipse] as const;
 
@@ -46,8 +53,19 @@ function hasVisiblePixels(canvas: PixelCanvas): boolean {
 
 export class ArtLibrary {
   private readonly sprites = new Map<string, SpriteInfo>();
+  private readonly levelKeys = new Set<string>();
+  private collecting = false;
+  private currentLevel: string | null = null;
 
   constructor(private readonly textures: Phaser.Textures.TextureManager) {}
+
+  get levelId(): string | null {
+    return this.currentLevel;
+  }
+
+  get levelTextureCount(): number {
+    return this.levelKeys.size;
+  }
 
   addCanvas(key: string, canvas: PixelCanvas, linear = false): void {
     if (this.textures.exists(key)) {
@@ -58,6 +76,7 @@ export class ArtLibrary {
       throw new Error(`Could not register texture "${key}".`);
     }
     texture.setFilter(linear ? Phaser.Textures.FilterMode.LINEAR : Phaser.Textures.FilterMode.NEAREST);
+    if (this.collecting) this.levelKeys.add(key);
   }
 
   addSprite(key: string, painted: PaintedSprite): SpriteInfo {
@@ -86,6 +105,25 @@ export class ArtLibrary {
     }
     return info;
   }
+
+  beginLevel(id: string): void {
+    this.disposeLevel();
+    this.currentLevel = id;
+    this.collecting = true;
+  }
+
+  endLevel(): void {
+    this.collecting = false;
+  }
+
+  disposeLevel(): void {
+    for (const key of this.levelKeys) {
+      if (this.textures.exists(key)) this.textures.remove(key);
+      this.sprites.delete(key);
+    }
+    this.levelKeys.clear();
+    this.currentLevel = null;
+  }
 }
 
 function registerTraveler(library: ArtLibrary, textures: Phaser.Textures.TextureManager, anims: Phaser.Animations.AnimationManager, timeline: Timeline): void {
@@ -108,44 +146,20 @@ function registerTraveler(library: ArtLibrary, textures: Phaser.Textures.Texture
   }
 }
 
-function registerBackdrops(library: ArtLibrary, level: LevelDef, timeline: Timeline): void {
-  const palette = paletteFor(timeline);
-  library.addCanvas(TextureKey.sky(timeline), paintSky(palette), true);
-  library.addCanvas(TextureKey.cloudBand(timeline), paintCloudBand(palette), true);
-  for (const spec of BACKDROP_LAYERS) {
-    const size = backdropWorldSize(spec, level.bounds.w, level.bounds.h);
-    const width = Math.ceil(size.width / spec.factor);
-    const height = Math.ceil(size.height / spec.factor);
-    const key = TextureKey.backdrop(spec.id, timeline);
-    if (spec.id === BackdropLayerId.Far) {
-      library.addCanvas(key, paintFarLayer(palette, width, height, spec.seed), spec.linear);
-    } else if (spec.id === BackdropLayerId.Islands) {
-      library.addCanvas(key, paintIslandLayer(palette, width, height, spec.seed), spec.linear);
-    } else {
-      const ruins = paintRuinsLayer(palette, width, height, spec.seed);
-      library.addCanvas(key, ruins.canvas, spec.linear);
-      library.addCanvas(TextureKey.glowOf(key), ruins.glow, true);
+function registerWraith(library: ArtLibrary, textures: Phaser.Textures.TextureManager, anims: Phaser.Animations.AnimationManager, timeline: Timeline): void {
+  const key = TextureKey.wraith(timeline);
+  const { sheet, glow } = paintWraithSheet(paletteFor(timeline));
+  library.addCanvas(key, sheet);
+  library.addCanvas(TextureKey.glowOf(key), glow, true);
+  for (const textureKey of [key, TextureKey.glowOf(key)]) {
+    const texture = textures.get(textureKey);
+    for (let frame = 0; frame < WRAITH_FRAME_COUNT; frame++) {
+      texture.add(frame, 0, frame * WRAITH_FRAME.width, 0, WRAITH_FRAME.width, WRAITH_FRAME.height);
     }
   }
-}
-
-function registerLevel(library: ArtLibrary, level: LevelDef, timeline: Timeline): void {
-  const palette = paletteFor(timeline);
-  for (const solid of level.solids) {
-    if (existsIn(solid.presence, timeline)) {
-      library.addSprite(TextureKey.solid(solid.id, timeline), paintSolid(solid, palette));
-    }
-  }
-  for (const hazard of level.hazards) {
-    if (existsIn(hazard.presence, timeline)) {
-      library.addSprite(TextureKey.hazard(hazard.id, timeline), paintHazard(hazard, palette));
-    }
-  }
-  level.decor.forEach((decor, index) => {
-    if (existsIn(decor.presence, timeline)) {
-      library.addSprite(TextureKey.decor(index, timeline), paintDecor(decor, palette));
-    }
-  });
+  const animKey = wraithAnimationKey(timeline);
+  if (anims.exists(animKey)) anims.remove(animKey);
+  anims.create({ key: animKey, frames: Array.from({ length: WRAITH_FRAME_COUNT }, (_, frame) => ({ key, frame })), frameRate: 6, repeat: -1 });
 }
 
 function registerProps(library: ArtLibrary, timeline: Timeline): void {
@@ -160,7 +174,7 @@ function registerProps(library: ArtLibrary, timeline: Timeline): void {
   library.addCanvas(TextureKey.portalRing(timeline), paintPortalRing(palette));
   library.addCanvas(TextureKey.portalRunes(timeline), paintPortalRunes(palette));
   library.addCanvas(TextureKey.portalShard(timeline), paintPortalShard(palette));
-  library.addCanvas(TextureKey.waterfall(timeline), paintWaterfallTile(palette));
+  library.addCanvas(TextureKey.chainLink(timeline), paintChainLink(palette));
 }
 
 function registerFx(library: ArtLibrary): void {
@@ -176,16 +190,66 @@ function registerFx(library: ArtLibrary): void {
   library.addCanvas(FxTexture.Fade, paintVerticalFade(), true);
   library.addCanvas(FxTexture.Fog, paintFogBand(), true);
   library.addCanvas(FxTexture.PortalCore, paintPortalCore(), true);
+  library.addCanvas(FxTexture.VoidEdge, paintVoidEdge(), true);
 }
 
-export function generateArt(scene: Phaser.Scene, level: LevelDef): ArtLibrary {
+export function generateSharedArt(scene: Phaser.Scene): ArtLibrary {
   const library = new ArtLibrary(scene.textures);
   registerFx(library);
   for (const timeline of TIMELINES) {
     registerTraveler(library, scene.textures, scene.anims, timeline);
+    registerWraith(library, scene.textures, scene.anims, timeline);
     registerProps(library, timeline);
-    registerLevel(library, level, timeline);
-    registerBackdrops(library, level, timeline);
   }
   return library;
+}
+
+function registerBackdrops(library: ArtLibrary, level: LevelDef, palette: Palette, timeline: Timeline): void {
+  const variation = hashString(level.id) % 997;
+  library.addCanvas(TextureKey.sky(timeline), paintSky(palette), true);
+  library.addCanvas(TextureKey.cloudBand(timeline), paintCloudBand(palette), true);
+  library.addCanvas(TextureKey.waterfall(timeline), paintWaterfallTile(palette));
+  for (const spec of BACKDROP_LAYERS) {
+    const size = backdropWorldSize(spec, level.bounds.w, level.bounds.h, MAX_HALF_WIDTH);
+    const width = Math.ceil(size.width / spec.factor);
+    const height = Math.ceil(size.height / spec.factor);
+    const key = TextureKey.backdrop(spec.id, timeline);
+    const seed = spec.seed + variation;
+    if (spec.id === BackdropLayerId.Far) {
+      library.addCanvas(key, paintFarLayer(palette, width, height, seed), spec.linear);
+    } else if (spec.id === BackdropLayerId.Islands) {
+      library.addCanvas(key, paintIslandLayer(palette, width, height, seed), spec.linear);
+    } else {
+      const ruins = paintRuinsLayer(palette, width, height, seed);
+      library.addCanvas(key, ruins.canvas, spec.linear);
+      library.addCanvas(TextureKey.glowOf(key), ruins.glow, true);
+    }
+  }
+}
+
+export function generateLevelArt(library: ArtLibrary, level: LevelDef, palettes: LevelPalettes): void {
+  library.beginLevel(level.id);
+  try {
+    for (const timeline of TIMELINES) {
+      const palette = palettes[timeline];
+      for (const solid of level.solids) {
+        if (existsIn(solid.presence, timeline)) {
+          library.addSprite(TextureKey.solid(solid.id, timeline), paintSolid(solid, palette));
+        }
+      }
+      for (const hazard of level.hazards) {
+        if (hazard.style === HazardStyle.Thorns && existsIn(hazard.presence, timeline)) {
+          library.addSprite(TextureKey.hazard(hazard.id, timeline), paintHazard(hazard, palette));
+        }
+      }
+      level.decor.forEach((decor, index) => {
+        if (existsIn(decor.presence, timeline)) {
+          library.addSprite(TextureKey.decor(index, timeline), paintDecor(decor, palette));
+        }
+      });
+      registerBackdrops(library, level, palette, timeline);
+    }
+  } finally {
+    library.endLevel();
+  }
 }

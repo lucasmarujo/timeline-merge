@@ -1,6 +1,8 @@
 ﻿import {
   DecorKind,
   DecorLayer,
+  ExitKind,
+  FragmentKind,
   HazardStyle,
   MechanismKind,
   Presence,
@@ -150,6 +152,7 @@ export const LEVEL_1: LevelDef = {
   fragments: [
     {
       id: 'fragment-builders',
+      kind: FragmentKind.Memory,
       presence: Presence.Both,
       x: 2810,
       y: 494,
@@ -158,6 +161,7 @@ export const LEVEL_1: LevelDef = {
     },
     {
       id: 'fragment-keeper',
+      kind: FragmentKind.Memory,
       presence: Presence.Eclipse,
       x: 4175,
       y: 520,
@@ -166,6 +170,7 @@ export const LEVEL_1: LevelDef = {
     },
     {
       id: 'fragment-traveler',
+      kind: FragmentKind.Memory,
       presence: Presence.Both,
       x: 5640,
       y: 196,
@@ -202,19 +207,6 @@ export const LEVEL_1: LevelDef = {
   ],
   hints: [
     {
-      id: 'hint-move',
-      zone: { x: 60, y: 700, w: 700, h: 400 },
-      text: 'A / D to move   ·   W or Space to jump',
-      touchText: 'Slide on the left pad to move   ·   tap JUMP to leap',
-    },
-    {
-      id: 'hint-shift',
-      zone: { x: 900, y: 700, w: 240, h: 400 },
-      text: 'The way is sealed in Dawn. Press Tab to shift into the Eclipse.',
-      touchText: 'The way is sealed in Dawn. Tap SHIFT to cross into the Eclipse.',
-      hideAfterShift: true,
-    },
-    {
       id: 'hint-observe',
       zone: { x: 1300, y: 700, w: 360, h: 400 },
       text: 'What stands whole in one reality may lie broken in the other.',
@@ -243,7 +235,9 @@ export const LEVEL_1: LevelDef = {
     { id: 'portal', zone: { x: 4700, ...FULL_HEIGHT, w: 2400 }, title: 'The Shattered Portal', subtitle: 'III' },
   ],
   decor,
+  zones: [],
   portal: {
+    kind: ExitKind.Shattered,
     x: 5640,
     y: 700,
     radius: 130,

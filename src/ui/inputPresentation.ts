@@ -8,11 +8,13 @@ export interface ControlLegend {
 }
 
 export interface InputCopy {
-  titlePrompt: string;
   titleFooter: string;
   introControls: readonly ControlLegend[];
   introTip: string | null;
   pauseHelp: string;
+  menuHelp: string;
+  atlasHelp: string;
+  cardPrompt: string;
   soundOff: string;
 }
 
@@ -35,18 +37,18 @@ export interface IntroLayout {
 }
 
 export interface MenuLayout {
-  titleY: number;
   firstY: number;
   spacing: number;
   size: number;
+}
+
+export interface PauseLayout extends MenuLayout {
+  titleY: number;
   helpY: number;
 }
 
-export interface VictoryLayout {
+export interface VictoryLayout extends MenuLayout {
   statsSize: number;
-  firstY: number;
-  spacing: number;
-  size: number;
 }
 
 export interface CornerLayout {
@@ -57,13 +59,14 @@ export interface CornerLayout {
 }
 
 export interface UiLayout {
-  titlePromptSize: number;
   footerSize: number;
+  title: MenuLayout;
   hint: TextSlot;
   hintBand: number;
   message: TextSlot;
   intro: IntroLayout;
-  pause: MenuLayout;
+  pause: PauseLayout;
+  complete: MenuLayout;
   victory: VictoryLayout;
   sound: CornerLayout;
 }
@@ -74,51 +77,55 @@ export const INTRO_HEADING = 'You exist as an echo in two worlds. Only one of th
 
 export const INPUT_COPY: Readonly<Record<InputMode, InputCopy>> = {
   [InputMode.Keyboard]: {
-    titlePrompt: 'PRESS  ENTER  TO  BEGIN',
-    titleFooter: 'A / D move   ·   W jump   ·   Tab shift reality   ·   E interact   ·   Esc pause   ·   M sound',
+    titleFooter: 'A / D move   ·   W jump   ·   Tab shift reality   ·   E interact   ·   Q dash   ·   Esc pause   ·   M sound',
     introControls: [
       { key: 'A  D', label: 'Move' },
       { key: 'W', label: 'Jump' },
-      { key: 'Tab', label: 'Shift reality' },
-      { key: 'E', label: 'Interact' },
       { key: 'R', label: 'Checkpoint' },
       { key: 'Esc', label: 'Pause' },
       { key: 'M', label: 'Sound' },
     ],
     introTip: null,
     pauseHelp: 'W / S to choose   ·   Enter to confirm   ·   Esc to resume',
+    menuHelp: 'W / S to choose   ·   Enter to confirm',
+    atlasHelp: '← →  choose an echo   ·   ↑ ↓  change chapter   ·   Enter  play   ·   Esc  back',
+    cardPrompt: 'PRESS  ENTER  TO  CONTINUE',
     soundOff: 'SOUND OFF  ·  M',
   },
   [InputMode.Touch]: {
-    titlePrompt: 'TAP  TO  BEGIN',
-    titleFooter: 'Move with the left pad   ·   Jump, Shift and Use with your right thumb',
+    titleFooter: 'Move with the left pad   ·   new powers appear on the right as you earn them',
     introControls: [],
-    introTip: 'Hold JUMP to leap higher. SHIFT works even in mid-air.',
+    introTip: 'Hold JUMP to leap higher. New abilities will awaken as you travel.',
     pauseHelp: 'Tap an option',
+    menuHelp: 'Tap an option',
+    atlasHelp: 'Tap an echo to select it, then tap it again to play',
+    cardPrompt: 'TAP  TO  CONTINUE',
     soundOff: 'SOUND OFF',
   },
 };
 
 export const UI_LAYOUT: Readonly<Record<InputMode, UiLayout>> = {
   [InputMode.Keyboard]: {
-    titlePromptSize: 20,
     footerSize: 18,
+    title: { firstY: GAME_HEIGHT - 150, spacing: 44, size: 21 },
     hint: { y: GAME_HEIGHT - 52, size: 25, wrap: null },
     hintBand: 120,
     message: { y: GAME_HEIGHT - 104, size: 24, wrap: null },
     intro: { band: 300, bandAtTop: false, headingY: GAME_HEIGHT - 212, headingSize: 22, wrap: null, capsY: GAME_HEIGHT - 168, labelY: GAME_HEIGHT - 138, tipY: GAME_HEIGHT - 138, tipSize: 19 },
-    pause: { titleY: 214, firstY: 300, spacing: 46, size: 21, helpY: GAME_HEIGHT - 110 },
-    victory: { statsSize: 16, firstY: 420, spacing: 48, size: 22 },
+    pause: { titleY: 184, firstY: 262, spacing: 44, size: 21, helpY: GAME_HEIGHT - 84 },
+    complete: { firstY: 452, spacing: 46, size: 22 },
+    victory: { statsSize: 16, firstY: 430, spacing: 48, size: 22 },
     sound: { x: GAME_WIDTH - 24, y: GAME_HEIGHT - 22, originX: 1, originY: 1 },
   },
   [InputMode.Touch]: {
-    titlePromptSize: 26,
     footerSize: 23,
+    title: { firstY: GAME_HEIGHT - 236, spacing: 96, size: 30 },
     hint: { y: GAME_HEIGHT - 66, size: 30, wrap: 540 },
     hintBand: 180,
     message: { y: GAME_HEIGHT - 178, size: 28, wrap: 540 },
     intro: { band: 330, bandAtTop: true, headingY: 200, headingSize: 28, wrap: 620, capsY: 252, labelY: 276, tipY: 276, tipSize: 24 },
-    pause: { titleY: 116, firstY: 212, spacing: 96, size: 32, helpY: GAME_HEIGHT - 48 },
+    pause: { titleY: 70, firstY: 150, spacing: 92, size: 30, helpY: GAME_HEIGHT - 30 },
+    complete: { firstY: 404, spacing: 92, size: 30 },
     victory: { statsSize: 22, firstY: 412, spacing: 96, size: 32 },
     sound: { x: 24, y: 20, originX: 0, originY: 0 },
   },

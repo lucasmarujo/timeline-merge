@@ -2,7 +2,7 @@ import { Timeline } from '../../core/enums';
 import { mix, shade, withAlpha } from './color';
 import type { Palette } from './palette';
 import type { PixelCanvas, Point } from './PixelCanvas';
-import type { Rng } from './rng';
+import type { Rng } from '../../core/rng';
 
 export interface PaintedSprite {
   canvas: PixelCanvas;

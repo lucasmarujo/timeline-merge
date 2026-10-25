@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { PIXEL } from '../config';
 import { FRAGMENTS_REQUIRED } from '../core/constants';
-import { Timeline } from '../core/enums';
+import { ExitKind, Timeline } from '../core/enums';
 import type { PortalDef } from '../core/types';
 import { toTint } from './art/color';
 import { paletteFor } from './art/palette';
@@ -18,6 +18,9 @@ export interface PortalFrame {
 
 const SOCKET_RADIUS = (PORTAL_RING_RADIUS - 5.5) * PIXEL;
 const SHARD_DRIFT = 30;
+const GATE_SCALE = 0.55;
+
+export const OPEN_GATE_FRAME: PortalFrame = { power: 0.95, ringSpeed: 2.2, assembled: 1, sockets: [0, 0, 0] };
 
 export class PortalView {
   private readonly container: Phaser.GameObjects.Container;
@@ -30,12 +33,14 @@ export class PortalView {
   private readonly sockets: Phaser.GameObjects.Image[] = [];
   private readonly socketGlows: Phaser.GameObjects.Image[] = [];
   private readonly coreStrength: number;
+  private readonly scale: number;
   private time = 0;
 
   constructor(scene: Phaser.Scene, layer: Phaser.GameObjects.Layer, timeline: Timeline, portal: PortalDef) {
     const palette = paletteFor(timeline);
     const isDawn = timeline === Timeline.Dawn;
-    this.container = scene.add.container(portal.x, portal.y).setDepth(DEPTH.portal);
+    this.scale = portal.kind === ExitKind.Gate ? GATE_SCALE : 1;
+    this.container = scene.add.container(portal.x, portal.y).setDepth(DEPTH.portal).setScale(this.scale);
     layer.add(this.container);
 
     this.halo = scene.add
@@ -111,6 +116,6 @@ export class PortalView {
 
   socketWorldPosition(index: number): { x: number; y: number } {
     const angle = PORTAL_SOCKET_ANGLES[index] ?? 0;
-    return { x: this.container.x + Math.cos(angle) * SOCKET_RADIUS, y: this.container.y + Math.sin(angle) * SOCKET_RADIUS };
+    return { x: this.container.x + Math.cos(angle) * SOCKET_RADIUS * this.scale, y: this.container.y + Math.sin(angle) * SOCKET_RADIUS * this.scale };
   }
 }

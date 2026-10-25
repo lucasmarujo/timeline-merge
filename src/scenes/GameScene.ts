@@ -1,38 +1,57 @@
 import Phaser from 'phaser';
 import { GAME_HEIGHT, SCENE_KEYS } from '../config';
 import { AudioEngine, Sfx } from '../audio/AudioEngine';
-import { FIXED_DT, FRAGMENTS_REQUIRED, MAX_FRAME_DELTA, PLAYER_SIZE } from '../core/constants';
-import { FlowAction, GamePhase, MechanismKind, SimEventType, SimStatus, Timeline } from '../core/enums';
+import { FIXED_DT, MAX_FRAME_DELTA, PLAYER_SIZE } from '../core/constants';
+import { Ability, ExitKind, FlowAction, GamePhase, MechanismKind, SimEventType, SimStatus, SwitchRejection, Timeline } from '../core/enums';
 import { finaleFrame, type FinaleFrame } from '../core/finale';
 import { GameFlow } from '../core/gameFlow';
 import { clamp, containsPoint } from '../core/geometry';
+import { isDashing } from '../core/physics';
 import { GameSimulation, IDLE_INPUT, type SimEvent } from '../core/simulation';
 import { otherTimeline } from '../core/timeline';
-import type { MechanismDef } from '../core/types';
+import type { LevelDef, MechanismDef } from '../core/types';
 import { Action, InputController } from '../input/InputController';
 import { detectInputMode, InputMode } from '../input/inputMode';
 import { InteractCue, TouchControls } from '../input/TouchControls';
-import { LEVEL_1 } from '../levels/level1';
-import type { ArtLibrary } from '../render/art/ArtLibrary';
-import { paletteFor } from '../render/art/palette';
+import { TouchButton, type ActionButton } from '../input/touchLayout';
+import { buildAtlas, jumpChapter, stepAtlas } from '../levels/atlas';
+import { completedTotal, continueLevel, isUnlocked, markSeen, recordCompletion, rememberLevel, type Progress } from '../levels/progress';
+import { abilitiesAt, CHAPTERS, chapterOf, DiscoveryKind, discoveryIntroducedAt, isChapterFinale, LEVEL_COUNT, type DiscoveryDef } from '../levels/progression';
+import { getLevel, HANDCRAFTED_LEVEL, levelName } from '../levels/registry';
+import { generateLevelArt, type ArtLibrary, type LevelPalettes } from '../render/art/ArtLibrary';
+import { paletteFor, themedPalette } from '../render/art/palette';
 import { CameraRig } from '../render/CameraRig';
 import type { PlayerRenderState } from '../render/PlayerView';
-import { PortalView, type PortalFrame } from '../render/PortalView';
+import { OPEN_GATE_FRAME, PortalView, type PortalFrame } from '../render/PortalView';
 import { WorldView } from '../render/WorldView';
 import { showFatalError } from '../ui/fatalError';
 import { PROMPT_STYLES } from '../ui/inputPresentation';
-import { createPauseMenu, createVictoryMenu, PauseOption, soundLabel, VictoryOption, type Menu } from '../ui/Menu';
+import {
+  CompleteOption,
+  createCompleteMenu,
+  createPauseMenu,
+  createTitleMenu,
+  createVictoryMenu,
+  formatDuration,
+  PauseOption,
+  soundLabel,
+  TitleOption,
+  VictoryOption,
+  type Menu,
+} from '../ui/Menu';
+import { loadProgress, saveProgress } from '../ui/progressStore';
 import { ART_REGISTRY_KEY } from './BootScene';
 import type { UiHost, UIScene } from './UIScene';
 
 enum TransitionAction {
-  StartGame = 'startGame',
-  RestartLevel = 'restartLevel',
+  Play = 'play',
+  Restart = 'restart',
   ReturnToTitle = 'returnToTitle',
 }
 
 interface Transition {
   action: TransitionAction;
+  level: number;
   elapsed: number;
   executed: boolean;
 }
@@ -43,31 +62,54 @@ interface Glance {
   remaining: number;
 }
 
+interface LevelResult {
+  time: number;
+  shifts: number;
+  deaths: number;
+  shard: boolean;
+  newBest: boolean;
+}
+
+const TITLE_LEVEL = HANDCRAFTED_LEVEL;
 const FADE_OUT = 0.45;
 const FADE_IN = 0.7;
 const GLANCE_DURATION = 2.2;
 const GLANCE_WEIGHT = 0.65;
 const PORTAL_HEARING_DISTANCE = 760;
 const FOCUS_HEAD_OFFSET = 44;
-const STAND_Y = LEVEL_1.portal.zone.y + LEVEL_1.portal.zone.h;
-const TITLE_FOCUS = { x: LEVEL_1.portal.x, y: LEVEL_1.portal.y + 72 };
+const EXIT_CARD_DELAY = 1.2;
+
+function statsLine(result: { time: number; shifts: number; deaths: number }): string {
+  return `TIME ${formatDuration(result.time)}     ·     SHIFTS ${result.shifts}     ·     FALLS ${result.deaths}`;
+}
 
 export class GameScene extends Phaser.Scene implements UiHost {
+  private art!: ArtLibrary;
   private sim!: GameSimulation;
+  private world: WorldView | null = null;
   private flow!: GameFlow;
   private rig!: CameraRig;
-  private world!: WorldView;
   private controls!: InputController;
   private touch!: TouchControls;
+  private audio!: AudioEngine;
+  private progress!: Progress;
+  private titleMenu!: Menu<TitleOption>;
+  private pauseMenu!: Menu<PauseOption>;
+  private completeMenu: Menu<CompleteOption> = createCompleteMenu(true);
+  private victoryMenu: Menu<VictoryOption> = createVictoryMenu(false);
+  private ui: UIScene | null = null;
   private inputMode = InputMode.Keyboard;
   private pickedIndex: number | null = null;
-  private audio!: AudioEngine;
-  private pauseMenu!: Menu<PauseOption>;
-  private victoryMenu!: Menu<VictoryOption>;
-  private ui: UIScene | null = null;
+  private briefingConfirmed = false;
+  private loadedLevel = 0;
+  private levelIndex = TITLE_LEVEL;
+  private titleView = true;
+  private atlasLevel = 1;
+  private exitTimer: number | null = null;
+  private lastResult: LevelResult | null = null;
   private accumulator = 0;
   private previousFeet = { x: 0, y: 0 };
-  private pending = { jump: false, shift: false, interact: false };
+  private pending = { jump: false, shift: false, interact: false, dash: false };
   private finaleTime = 0;
   private finale: FinaleFrame = finaleFrame(0);
   private flashPlayed = false;
@@ -87,27 +129,36 @@ export class GameScene extends Phaser.Scene implements UiHost {
       showFatalError('The worlds could not be woven', 'Required game resources are missing. Please reload the page.');
       return;
     }
-    this.sim = new GameSimulation(LEVEL_1);
+    this.art = art;
     this.flow = new GameFlow();
     this.controls = new InputController(keyboard, detectInputMode((query) => window.matchMedia?.(query).matches === true));
     this.inputMode = this.controls.mode;
-    this.world = new WorldView(this, LEVEL_1, art, PROMPT_STYLES[this.inputMode]);
-    this.rig = new CameraRig(this, LEVEL_1.bounds);
-    this.world.bindCameras(this.rig);
+    this.progress = loadProgress();
+    this.atlasLevel = continueLevel(this.progress);
+    this.rig = new CameraRig(this, getLevel(TITLE_LEVEL).bounds, this.scale.width);
     this.touch = new TouchControls(this.controls, this.scale);
     this.audio = new AudioEngine();
     this.audio.armUnlock();
     this.pauseMenu = createPauseMenu(this.audio.isMuted);
-    this.victoryMenu = createVictoryMenu();
+    this.titleMenu = this.buildTitleMenu();
+    try {
+      this.loadWorld(TITLE_LEVEL);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      showFatalError('The worlds could not be woven', `${detail}. Please reload the page.`);
+      return;
+    }
     this.prepareTitle();
 
     this.game.events.on(Phaser.Core.Events.BLUR, this.handleBlur, this);
     this.game.events.on(Phaser.Core.Events.HIDDEN, this.handleBlur, this);
     this.input.on(Phaser.Input.Events.POINTER_UP, this.handleTap, this);
+    this.scale.on(Phaser.Scale.Events.RESIZE, this.handleResize, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.game.events.off(Phaser.Core.Events.BLUR, this.handleBlur, this);
       this.game.events.off(Phaser.Core.Events.HIDDEN, this.handleBlur, this);
       this.input.off(Phaser.Input.Events.POINTER_UP, this.handleTap, this);
+      this.scale.off(Phaser.Scale.Events.RESIZE, this.handleResize, this);
       this.touch.dispose();
       this.audio.dispose();
     });
@@ -117,12 +168,12 @@ export class GameScene extends Phaser.Scene implements UiHost {
   attachUi(ui: UIScene): void {
     this.ui = ui;
     ui.setInputMode(this.inputMode);
-    ui.showTitle();
+    ui.showTitle(this.titleMenu);
     if (this.audio.isMuted) ui.showMute(true);
   }
 
   override update(_time: number, deltaMs: number): void {
-    if (!this.ui || !this.sim) return;
+    if (!this.ui || !this.sim || !this.world) return;
     const dt = Math.min(deltaMs / 1000, MAX_FRAME_DELTA);
     this.elapsed += dt;
 
@@ -139,11 +190,20 @@ export class GameScene extends Phaser.Scene implements UiHost {
         case GamePhase.Title:
           this.updateTitle();
           break;
+        case GamePhase.Atlas:
+          this.updateAtlas();
+          break;
+        case GamePhase.Briefing:
+          this.updateBriefing();
+          break;
         case GamePhase.Playing:
           this.updatePlaying(dt);
           break;
         case GamePhase.Paused:
           this.updatePaused();
+          break;
+        case GamePhase.LevelComplete:
+          this.updateLevelComplete(dt);
           break;
         case GamePhase.Finale:
           this.updateFinale(dt);
@@ -155,6 +215,7 @@ export class GameScene extends Phaser.Scene implements UiHost {
     }
     this.controls.flush();
     this.pickedIndex = null;
+    this.briefingConfirmed = false;
     this.renderFrame(dt);
   }
 
@@ -165,21 +226,71 @@ export class GameScene extends Phaser.Scene implements UiHost {
     this.pickedIndex = index;
   }
 
-  private handleTap(pointer: Phaser.Input.Pointer): void {
-    if (!pointer.wasTouch) return;
+  pickAtlasLevel(level: number): void {
     this.controls.useTouch();
-    if (this.flow.phase !== GamePhase.Title || this.transition) return;
     this.touch.enterFullscreen();
     this.audio.unlock();
-    this.controls.pressVirtual(Action.Confirm);
+    if (this.flow.phase !== GamePhase.Atlas || this.transition) return;
+    if (level === this.atlasLevel && isUnlocked(this.progress, level)) {
+      this.playFromMenu(level);
+      return;
+    }
+    this.selectAtlas(level);
+  }
+
+  shiftAtlasChapter(delta: number): void {
+    this.controls.useTouch();
+    if (this.flow.phase !== GamePhase.Atlas || this.transition) return;
+    this.selectAtlas(jumpChapter(this.atlasLevel, delta));
+  }
+
+  leaveAtlas(): void {
+    this.controls.useTouch();
+    if (this.flow.phase !== GamePhase.Atlas || this.transition) return;
+    this.audio.play(Sfx.MenuMove);
+    this.beginTransition(TransitionAction.ReturnToTitle, TITLE_LEVEL);
+  }
+
+  confirmBriefing(): void {
+    this.controls.useTouch();
+    this.touch.enterFullscreen();
+    this.audio.unlock();
+    this.briefingConfirmed = true;
+  }
+
+  private get ui$(): UIScene {
+    return this.ui as UIScene;
+  }
+
+  private get world$(): WorldView {
+    return this.world as WorldView;
+  }
+
+  private get level(): LevelDef {
+    return this.sim.level;
+  }
+
+  private handleTap(pointer: Phaser.Input.Pointer): void {
+    if (pointer.wasTouch) this.controls.useTouch();
+  }
+
+  private handleResize(gameSize: Phaser.Structs.Size): void {
+    this.rig.resize(gameSize.width);
+    this.world?.resize(gameSize.width / 2);
   }
 
   private applyInputMode(mode: InputMode): void {
     this.inputMode = mode;
-    this.world.setPromptStyle(PROMPT_STYLES[mode]);
+    this.world$.setPromptStyle(PROMPT_STYLES[mode]);
     this.ui$.setInputMode(mode);
     if (this.flow.phase === GamePhase.Paused) this.ui$.updatePause(this.pauseMenu);
     if (this.flow.phase === GamePhase.Victory) this.ui$.updateVictory(this.victoryMenu);
+    if (this.flow.phase === GamePhase.LevelComplete) this.ui$.updateComplete(this.completeMenu);
+    if (this.flow.phase === GamePhase.Title) this.ui$.updateTitleMenu(this.titleMenu);
+    if (this.flow.phase === GamePhase.Briefing) {
+      const discovery = discoveryIntroducedAt(this.levelIndex);
+      if (discovery) this.ui$.showDiscovery(this.discoveryContent(discovery));
+    }
   }
 
   private choose<T extends string>(menu: Menu<T>): boolean {
@@ -189,53 +300,112 @@ export class GameScene extends Phaser.Scene implements UiHost {
     return picked;
   }
 
-  private get ui$(): UIScene {
-    return this.ui as UIScene;
+  private palettesFor(index: number): LevelPalettes {
+    const chapter = chapterOf(index);
+    return { [Timeline.Dawn]: themedPalette(Timeline.Dawn, chapter.dawn), [Timeline.Eclipse]: themedPalette(Timeline.Eclipse, chapter.eclipse) };
+  }
+
+  private loadWorld(index: number): void {
+    if (this.loadedLevel === index && this.world) return;
+    this.world?.destroy();
+    this.world = null;
+    this.tweens.killAll();
+    this.time.removeAllEvents();
+    const level = getLevel(index);
+    const palettes = this.palettesFor(index);
+    const started = performance.now();
+    generateLevelArt(this.art, level, palettes);
+    this.sim = new GameSimulation(level, abilitiesAt(index));
+    this.world = new WorldView(this, level, this.art, PROMPT_STYLES[this.inputMode], palettes, this.rig.viewWidth);
+    this.world.bindCameras(this.rig);
+    this.rig.setBounds(level.bounds);
+    this.loadedLevel = index;
+    this.levelIndex = index;
+    if (import.meta.env.DEV) console.info(`[Timeline Merge] Wove echo ${index} in ${Math.round(performance.now() - started)} ms.`);
   }
 
   private feet(): { x: number; y: number } {
     return { x: this.sim.body.x + PLAYER_SIZE.width / 2, y: this.sim.body.y + PLAYER_SIZE.height };
   }
 
+  private titleFocus(): { x: number; y: number } {
+    return { x: this.level.portal.x, y: this.level.portal.y + 72 };
+  }
+
+  private standY(): number {
+    return this.level.portal.zone.y + this.level.portal.zone.h;
+  }
+
+  private buildTitleMenu(): Menu<TitleOption> {
+    const fresh = completedTotal(this.progress) === 0 && this.progress.unlocked === 1;
+    return createTitleMenu(continueLevel(this.progress), fresh);
+  }
+
   private prepareTitle(): void {
+    this.titleView = true;
     this.sim.reset();
-    this.world.reset();
-    this.world.sync(this.sim, true);
+    this.world$.reset();
+    this.world$.sync(this.sim, true);
     this.finaleTime = 0;
     this.finale = finaleFrame(0);
     this.glance = null;
+    this.exitTimer = null;
     this.rig.merge = 1;
     this.rig.setBothActive();
-    this.rig.snapTo(TITLE_FOCUS.x, TITLE_FOCUS.y, 0);
-    this.world.player.appear(true);
+    const focus = this.titleFocus();
+    this.rig.snapTo(focus.x, focus.y, 0);
+    this.world$.player.appear(true);
     this.audio.setPortalProximity(0.5);
   }
 
   private startRun(): void {
+    this.titleView = false;
     this.sim.reset();
-    this.world.reset();
-    this.world.sync(this.sim, true);
-    this.world.player.appear(true);
+    this.world$.reset();
+    this.world$.sync(this.sim, true);
+    this.world$.player.appear(true);
     this.finaleTime = 0;
     this.finale = finaleFrame(0);
     this.flashPlayed = false;
     this.glance = null;
+    this.exitTimer = null;
     this.accumulator = 0;
-    this.pending = { jump: false, shift: false, interact: false };
+    this.pending = { jump: false, shift: false, interact: false, dash: false };
     this.previousFeet = this.feet();
     const feet = this.feet();
     this.rig.merge = 0;
     this.rig.setActiveTimeline(Timeline.Dawn, true);
     this.rig.snapTo(feet.x, feet.y - FOCUS_HEAD_OFFSET, 1);
     this.audio.setTimeline(Timeline.Dawn);
+    const slots = this.level.portal.kind === ExitKind.Shattered ? this.sim.fragmentsRequired : 1;
+    this.ui$.configureHud(`ECHO ${this.levelIndex}`, slots);
     this.ui$.setFragments(0);
-    this.ui$.showGameplay();
-    this.ui$.showIntro();
   }
 
-  private beginTransition(action: TransitionAction): void {
+  private enterGameplay(): void {
+    this.ui$.showGameplay();
+    if (this.levelIndex === 1) this.ui$.showIntro();
+  }
+
+  private discoveryContent(discovery: DiscoveryDef): { kind: string; title: string; summary: string; control: string | null; ability: boolean } {
+    const ability = discovery.kind === DiscoveryKind.Ability;
+    const control = discovery.control ? (this.inputMode === InputMode.Touch ? `TOUCH  ·  ${discovery.control.touch.toUpperCase()}` : `KEYS  ·  ${discovery.control.keyboard.toUpperCase()}`) : null;
+    return { kind: ability ? 'New ability' : 'New phenomenon', title: discovery.title, summary: discovery.summary, control, ability };
+  }
+
+  private beginTransition(action: TransitionAction, level: number): void {
     if (this.transition) return;
-    this.transition = { action, elapsed: 0, executed: false };
+    this.transition = { action, level, elapsed: 0, executed: false };
+  }
+
+  private playFromMenu(level: number): void {
+    if (!isUnlocked(this.progress, level)) {
+      this.audio.play(Sfx.Reject);
+      return;
+    }
+    this.audio.unlock();
+    this.audio.play(Sfx.MenuSelect);
+    this.beginTransition(TransitionAction.Play, level);
   }
 
   private updateTransition(dt: number): void {
@@ -248,7 +418,7 @@ export class GameScene extends Phaser.Scene implements UiHost {
     if (!transition.executed) {
       this.fade = Math.max(this.fade, Math.min(1, transition.elapsed / FADE_OUT));
       if (transition.elapsed >= FADE_OUT) {
-        this.executeTransition(transition.action);
+        this.executeTransition(transition);
         transition.executed = true;
         transition.elapsed = 0;
       }
@@ -261,30 +431,99 @@ export class GameScene extends Phaser.Scene implements UiHost {
     }
   }
 
-  private executeTransition(action: TransitionAction): void {
-    switch (action) {
-      case TransitionAction.StartGame:
-        this.flow.dispatch(this.flow.phase === GamePhase.Victory ? FlowAction.PlayAgain : FlowAction.Start);
+  private executeTransition(transition: Transition): void {
+    switch (transition.action) {
+      case TransitionAction.Play: {
+        this.loadWorld(transition.level);
         this.startRun();
+        this.progress = rememberLevel(this.progress, transition.level);
+        saveProgress(this.progress);
+        const discovery = discoveryIntroducedAt(transition.level);
+        if (discovery && !this.progress.seen.includes(discovery.id) && this.flow.dispatch(FlowAction.Brief)) {
+          this.ui$.showDiscovery(this.discoveryContent(discovery));
+          this.audio.play(Sfx.Unlock);
+        } else {
+          this.flow.dispatch(this.flow.can(FlowAction.Start) ? FlowAction.Start : FlowAction.PlayAgain);
+          this.enterGameplay();
+        }
         break;
-      case TransitionAction.RestartLevel:
-        this.flow.dispatch(FlowAction.Resume);
+      }
+      case TransitionAction.Restart:
+        this.flow.dispatch(FlowAction.Start);
         this.startRun();
+        this.enterGameplay();
         break;
       case TransitionAction.ReturnToTitle:
         this.flow.dispatch(FlowAction.ReturnToTitle);
+        this.loadWorld(TITLE_LEVEL);
         this.prepareTitle();
-        this.ui$.showTitle();
+        this.titleMenu = this.buildTitleMenu();
+        this.ui$.showTitle(this.titleMenu);
         break;
     }
   }
 
+  private moveMenu<T extends string>(menu: Menu<T>, delta: number, render: (menu: Menu<T>) => void): void {
+    menu.move(delta);
+    this.audio.play(Sfx.MenuMove);
+    render(menu);
+  }
+
   private updateTitle(): void {
-    if (this.controls.consume(Action.Confirm)) {
-      this.audio.unlock();
+    if (this.controls.consume(Action.MenuUp)) this.moveMenu(this.titleMenu, -1, (menu) => this.ui$.updateTitleMenu(menu));
+    if (this.controls.consume(Action.MenuDown)) this.moveMenu(this.titleMenu, 1, (menu) => this.ui$.updateTitleMenu(menu));
+    if (!this.choose(this.titleMenu)) return;
+    this.audio.unlock();
+    this.touch.enterFullscreen();
+    if (this.titleMenu.selected === TitleOption.Continue) {
+      this.playFromMenu(continueLevel(this.progress));
+    } else {
       this.audio.play(Sfx.MenuSelect);
-      this.beginTransition(TransitionAction.StartGame);
+      this.openAtlas(continueLevel(this.progress));
     }
+  }
+
+  private openAtlas(level: number): void {
+    if (!this.flow.dispatch(FlowAction.OpenAtlas)) return;
+    this.atlasLevel = level;
+    this.ui$.showAtlas(buildAtlas(this.progress, this.atlasLevel));
+  }
+
+  private selectAtlas(level: number): void {
+    if (level === this.atlasLevel) return;
+    this.atlasLevel = level;
+    this.audio.play(Sfx.MenuMove);
+    this.ui$.updateAtlas(buildAtlas(this.progress, this.atlasLevel));
+  }
+
+  private updateAtlas(): void {
+    if (this.controls.consume(Action.Pause)) {
+      this.leaveAtlas();
+      return;
+    }
+    if (this.controls.consume(Action.MenuLeft)) this.selectAtlas(stepAtlas(this.atlasLevel, -1));
+    if (this.controls.consume(Action.MenuRight)) this.selectAtlas(stepAtlas(this.atlasLevel, 1));
+    if (this.controls.consume(Action.MenuUp)) this.selectAtlas(jumpChapter(this.atlasLevel, -1));
+    if (this.controls.consume(Action.MenuDown)) this.selectAtlas(jumpChapter(this.atlasLevel, 1));
+    if (this.controls.consume(Action.Confirm)) this.playFromMenu(this.atlasLevel);
+  }
+
+  private updateBriefing(): void {
+    if (this.controls.consume(Action.Pause)) {
+      this.ui$.hideDiscovery();
+      this.openAtlas(this.levelIndex);
+      return;
+    }
+    if (!this.briefingConfirmed && !this.controls.consume(Action.Confirm)) return;
+    const discovery = discoveryIntroducedAt(this.levelIndex);
+    if (discovery) {
+      this.progress = markSeen(this.progress, discovery.id);
+      saveProgress(this.progress);
+    }
+    this.audio.play(Sfx.MenuSelect);
+    this.ui$.hideDiscovery();
+    this.flow.dispatch(FlowAction.Start);
+    this.enterGameplay();
   }
 
   private updatePlaying(dt: number): void {
@@ -298,6 +537,7 @@ export class GameScene extends Phaser.Scene implements UiHost {
     this.pending.jump ||= this.controls.consume(Action.Jump);
     this.pending.shift ||= this.controls.consume(Action.Shift);
     this.pending.interact ||= this.controls.consume(Action.Interact);
+    this.pending.dash ||= this.controls.consume(Action.Dash);
 
     this.accumulator += dt;
     while (this.accumulator >= FIXED_DT && this.flow.phase === GamePhase.Playing) {
@@ -308,8 +548,9 @@ export class GameScene extends Phaser.Scene implements UiHost {
         jumpHeld: this.controls.isDown(Action.Jump),
         shiftPressed: this.pending.shift,
         interactPressed: this.pending.interact,
+        dashPressed: this.pending.dash,
       });
-      this.pending = { jump: false, shift: false, interact: false };
+      this.pending = { jump: false, shift: false, interact: false, dash: false };
       this.accumulator -= FIXED_DT;
       this.handleEvents(events);
     }
@@ -335,8 +576,8 @@ export class GameScene extends Phaser.Scene implements UiHost {
       this.resume();
       return;
     }
-    if (this.controls.consume(Action.MenuUp)) this.moveMenu(this.pauseMenu, -1);
-    if (this.controls.consume(Action.MenuDown)) this.moveMenu(this.pauseMenu, 1);
+    if (this.controls.consume(Action.MenuUp)) this.moveMenu(this.pauseMenu, -1, (menu) => this.ui$.updatePause(menu));
+    if (this.controls.consume(Action.MenuDown)) this.moveMenu(this.pauseMenu, 1, (menu) => this.ui$.updatePause(menu));
     if (!this.choose(this.pauseMenu)) return;
     this.audio.play(Sfx.MenuSelect);
     switch (this.pauseMenu.selected) {
@@ -349,23 +590,98 @@ export class GameScene extends Phaser.Scene implements UiHost {
         break;
       case PauseOption.RestartLevel:
         this.ui$.hidePause();
-        this.beginTransition(TransitionAction.RestartLevel);
+        this.beginTransition(TransitionAction.Restart, this.levelIndex);
+        break;
+      case PauseOption.Atlas:
+        this.ui$.hidePause();
+        this.openAtlas(this.levelIndex);
         break;
       case PauseOption.Sound:
         this.toggleMute();
         break;
       case PauseOption.Title:
         this.ui$.hidePause();
-        this.beginTransition(TransitionAction.ReturnToTitle);
+        this.beginTransition(TransitionAction.ReturnToTitle, TITLE_LEVEL);
         break;
     }
   }
 
-  private moveMenu<T extends string>(menu: Menu<T>, delta: number): void {
-    menu.move(delta);
-    this.audio.play(Sfx.MenuMove);
-    if (this.flow.phase === GamePhase.Paused) this.ui$.updatePause(menu);
-    else this.ui$.updateVictory(menu);
+  private completeLevel(): void {
+    const record = this.progress.records[this.levelIndex];
+    const time = this.sim.stats.time;
+    this.lastResult = {
+      time,
+      shifts: this.sim.stats.shifts,
+      deaths: this.sim.stats.deaths,
+      shard: this.sim.shardCollected,
+      newBest: record !== undefined && time < record.bestTime,
+    };
+    this.progress = recordCompletion(this.progress, { level: this.levelIndex, time, shard: this.sim.shardCollected });
+    saveProgress(this.progress);
+  }
+
+  private reachExit(): void {
+    this.completeLevel();
+    this.flow.dispatch(FlowAction.Exit);
+    this.ui$.hideIntro();
+    const feet = this.feet();
+    const palette = paletteFor(this.sim.timeline);
+    this.world$.player.vanish();
+    this.world$.ringAt(this.sim.timeline, this.level.portal.x, this.level.portal.y, 3.2, palette.emissive);
+    this.world$.burst(this.sim.timeline, feet.x, feet.y - 20, 40);
+    this.rig.shake(260, 0.003);
+    this.audio.play(Sfx.LevelComplete);
+    this.exitTimer = EXIT_CARD_DELAY;
+  }
+
+  private showCompletionCard(): void {
+    const result = this.lastResult;
+    if (!result) return;
+    const next = this.levelIndex + 1;
+    const discovery = discoveryIntroducedAt(next);
+    const teaser = discovery
+      ? `Something new awakens in Echo ${next}…`
+      : isChapterFinale(next)
+        ? `The trial of ${chapterOf(next).title} awaits.`
+        : '';
+    const badges = [result.shard ? 'Echo shard recovered' : 'An echo shard still hides somewhere here'];
+    if (result.newBest) badges.push('New best time');
+    this.completeMenu = createCompleteMenu(next <= LEVEL_COUNT);
+    this.ui$.showComplete(
+      {
+        title: `ECHO ${this.levelIndex} RESTORED`,
+        name: levelName(this.levelIndex),
+        stats: statsLine(result),
+        badge: badges.join('   ·   '),
+        teaser,
+      },
+      this.completeMenu,
+    );
+  }
+
+  private updateLevelComplete(dt: number): void {
+    if (this.exitTimer !== null) {
+      this.exitTimer -= dt;
+      if (this.exitTimer > 0) return;
+      this.exitTimer = null;
+      this.showCompletionCard();
+      return;
+    }
+    if (this.controls.consume(Action.MenuUp)) this.moveMenu(this.completeMenu, -1, (menu) => this.ui$.updateComplete(menu));
+    if (this.controls.consume(Action.MenuDown)) this.moveMenu(this.completeMenu, 1, (menu) => this.ui$.updateComplete(menu));
+    if (!this.choose(this.completeMenu)) return;
+    this.audio.play(Sfx.MenuSelect);
+    switch (this.completeMenu.selected) {
+      case CompleteOption.Continue:
+        this.beginTransition(TransitionAction.Play, Math.min(LEVEL_COUNT, this.levelIndex + 1));
+        break;
+      case CompleteOption.Replay:
+        this.beginTransition(TransitionAction.Play, this.levelIndex);
+        break;
+      case CompleteOption.Atlas:
+        this.openAtlas(Math.min(LEVEL_COUNT, this.levelIndex + 1));
+        break;
+    }
   }
 
   private updateFinale(dt: number): void {
@@ -385,21 +701,40 @@ export class GameScene extends Phaser.Scene implements UiHost {
       this.rig.shake(500, 0.004);
     }
     if (this.finale.done && this.flow.dispatch(FlowAction.Complete)) {
-      this.victoryMenu.reset();
-      this.ui$.showVictory(this.victoryMenu, { time: this.sim.stats.time, shifts: this.sim.stats.shifts, deaths: this.sim.stats.deaths });
+      const final = this.levelIndex >= LEVEL_COUNT;
+      const chapter = chapterOf(this.levelIndex);
+      const nextChapter = CHAPTERS[chapter.index] ?? null;
+      this.victoryMenu = createVictoryMenu(final);
+      this.ui$.showVictory(this.victoryMenu, {
+        title: final ? 'THE TIMELINES ARE ONE' : `CHAPTER ${chapter.numeral} RESTORED`,
+        line: final
+          ? 'A hundred echoes, one traveler. The bridge between worlds holds once more.'
+          : `${chapter.title} remembers itself.${nextChapter ? ` ${nextChapter.title} awaits.` : ''}`,
+        stats: statsLine(this.sim.stats),
+      });
     }
   }
 
   private updateVictory(): void {
-    if (this.controls.consume(Action.MenuUp)) this.moveMenu(this.victoryMenu, -1);
-    if (this.controls.consume(Action.MenuDown)) this.moveMenu(this.victoryMenu, 1);
+    if (this.controls.consume(Action.MenuUp)) this.moveMenu(this.victoryMenu, -1, (menu) => this.ui$.updateVictory(menu));
+    if (this.controls.consume(Action.MenuDown)) this.moveMenu(this.victoryMenu, 1, (menu) => this.ui$.updateVictory(menu));
     if (this.controls.consume(Action.Pause)) {
-      this.beginTransition(TransitionAction.ReturnToTitle);
+      this.beginTransition(TransitionAction.ReturnToTitle, TITLE_LEVEL);
       return;
     }
     if (!this.choose(this.victoryMenu)) return;
     this.audio.play(Sfx.MenuSelect);
-    this.beginTransition(this.victoryMenu.selected === VictoryOption.PlayAgain ? TransitionAction.StartGame : TransitionAction.ReturnToTitle);
+    switch (this.victoryMenu.selected) {
+      case VictoryOption.Continue:
+        this.beginTransition(TransitionAction.Play, Math.min(LEVEL_COUNT, this.levelIndex + 1));
+        break;
+      case VictoryOption.Atlas:
+        this.openAtlas(this.levelIndex);
+        break;
+      case VictoryOption.Title:
+        this.beginTransition(TransitionAction.ReturnToTitle, TITLE_LEVEL);
+        break;
+    }
   }
 
   private toggleMute(): void {
@@ -418,13 +753,28 @@ export class GameScene extends Phaser.Scene implements UiHost {
   }
 
   private lookAt(mechanism: MechanismDef): void {
-    const affected = LEVEL_1.solids.filter((solid) => solid.condition?.requires === mechanism.id || solid.condition?.unless === mechanism.id);
+    const affected = this.level.solids.filter((solid) => solid.condition?.requires === mechanism.id || solid.condition?.unless === mechanism.id);
     if (affected.length === 0) return;
     const left = Math.min(...affected.map((solid) => solid.x));
     const right = Math.max(...affected.map((solid) => solid.x + solid.w));
     const top = Math.min(...affected.map((solid) => solid.y));
     const bottom = Math.max(...affected.map((solid) => solid.y + solid.h));
     this.glance = { x: (left + right) / 2, y: (top + bottom) / 2, remaining: GLANCE_DURATION };
+  }
+
+  private rejectionMessage(reason: SwitchRejection): string {
+    switch (reason) {
+      case SwitchRejection.Locked:
+        return 'The rift is still closed to you.';
+      case SwitchRejection.Grounded:
+        return 'For now, the rift only opens beneath steady feet.';
+      case SwitchRejection.Anchored:
+        return this.sim.pulseReading() ? 'Inside the pulse, the rift moves on its own.' : 'The chains hold this reality in place.';
+      case SwitchRejection.Hazard:
+        return 'Thorns crowd that space in the other reality.';
+      case SwitchRejection.Blocked:
+        return 'Something solid fills that space in the other reality.';
+    }
   }
 
   private handleEvents(events: SimEvent[]): void {
@@ -434,39 +784,50 @@ export class GameScene extends Phaser.Scene implements UiHost {
         case SimEventType.Jumped:
           this.audio.play(Sfx.Jump);
           break;
+        case SimEventType.AirJumped:
+        case SimEventType.WallJumped:
+          this.audio.play(Sfx.AirJump);
+          this.world$.burst(this.sim.timeline, feet.x, feet.y, 8);
+          break;
+        case SimEventType.Dashed:
+          this.audio.play(Sfx.Dash);
+          this.rig.shake(90, 0.002);
+          break;
         case SimEventType.Landed:
-          this.world.landEffect(this.sim.timeline, feet.x, feet.y, event.impactSpeed);
+          this.world$.landEffect(this.sim.timeline, feet.x, feet.y, event.impactSpeed);
           if (event.impactSpeed > 220) this.audio.play(Sfx.Land, clamp(event.impactSpeed / 900, 0.3, 1));
           break;
-        case SimEventType.TimelineShifted: {
+        case SimEventType.TimelineShifted:
+        case SimEventType.PulseShifted: {
           const from = otherTimeline(event.to);
-          this.world.shiftEffect(from, event.to, feet.x, feet.y);
+          this.world$.shiftEffect(from, event.to, feet.x, feet.y);
           this.rig.setActiveTimeline(event.to, false);
           this.rig.pulse();
           this.ui$.shiftPulse(event.to, feet.y - FOCUS_HEAD_OFFSET + 20 - this.rig.scrollOf(event.to).y);
           this.audio.setTimeline(event.to);
-          this.audio.play(Sfx.Shift);
+          this.audio.play(event.type === SimEventType.PulseShifted ? Sfx.Pulse : Sfx.Shift);
           break;
         }
         case SimEventType.ShiftRejected:
-          this.world.rejectEffect(otherTimeline(this.sim.timeline), feet.x, feet.y);
+          this.world$.rejectEffect(otherTimeline(this.sim.timeline), feet.x, feet.y);
           this.rig.shake(140, 0.003, otherTimeline(this.sim.timeline));
           this.ui$.rejectFlash();
-          this.ui$.showMessage('Something solid fills that space in the other reality.', 1.6);
+          this.ui$.showMessage(this.rejectionMessage(event.reason), 1.8);
           this.audio.play(Sfx.Reject);
           break;
         case SimEventType.FragmentCollected:
-          this.world.collectFragment(event.fragment);
-          this.ui$.showMemory(event.fragment, event.count, FRAGMENTS_REQUIRED);
+          this.world$.collectFragment(event.fragment);
+          this.ui$.showMemory(event.fragment, event.count, event.required);
+          this.ui$.setFragments(event.required > 1 ? event.count : 1);
           this.rig.shake(160, 0.002);
           this.audio.play(Sfx.Collect);
           break;
         case SimEventType.CheckpointReached:
-          this.world.markCheckpoint(event.checkpoint, this.sim.timeline);
+          this.world$.markCheckpoint(event.checkpoint, this.sim.timeline);
           this.audio.play(Sfx.Checkpoint);
           break;
         case SimEventType.MechanismActivated:
-          this.world.sync(this.sim, false);
+          this.world$.sync(this.sim, false);
           this.lookAt(event.mechanism);
           this.ui$.showMessage(event.mechanism.message, 4.4);
           this.rig.shake(900, 0.0035);
@@ -478,21 +839,34 @@ export class GameScene extends Phaser.Scene implements UiHost {
           this.audio.play(Sfx.Reject);
           break;
         }
+        case SimEventType.Crumbled:
+          this.world$.crumbleEffect(event.solid);
+          this.audio.play(Sfx.Crumble);
+          break;
+        case SimEventType.Reformed:
+          this.world$.reformEffect(event.solid);
+          break;
         case SimEventType.Died:
-          this.world.deathEffect(this.sim.timeline, feet.x, feet.y);
+          this.world$.deathEffect(this.sim.timeline, feet.x, feet.y);
           this.rig.shake(220, 0.004);
           this.audio.play(Sfx.Death);
           break;
         case SimEventType.Respawned: {
           const respawnFeet = this.feet();
           this.previousFeet = respawnFeet;
-          this.world.player.appear(false);
-          this.world.ringAt(event.timeline, respawnFeet.x, respawnFeet.y - 18, 1.4, paletteFor(event.timeline).emissive);
+          this.world$.sync(this.sim, true);
+          this.world$.player.appear(false);
+          this.world$.ringAt(event.timeline, respawnFeet.x, respawnFeet.y - 18, 1.4, paletteFor(event.timeline).emissive);
           this.rig.setActiveTimeline(event.timeline, false);
           this.audio.setTimeline(event.timeline);
           this.audio.play(Sfx.Respawn);
           break;
         }
+        case SimEventType.UnravelingAwakened:
+          this.ui$.showMessage('The world is unraveling behind you. Run.', 3);
+          this.rig.shake(700, 0.004);
+          this.audio.play(Sfx.Unravel);
+          break;
         case SimEventType.PortalUnstable:
           this.ui$.showMessage(
             event.missing === 1
@@ -504,11 +878,15 @@ export class GameScene extends Phaser.Scene implements UiHost {
           this.audio.play(Sfx.PortalUnstable);
           break;
         case SimEventType.PortalActivated:
+          this.completeLevel();
           this.flow.dispatch(FlowAction.BeginFinale);
           this.finaleTime = 0;
           this.flashPlayed = false;
           this.ui$.hideIntro();
           this.audio.play(Sfx.PortalActivate);
+          break;
+        case SimEventType.ExitReached:
+          this.reachExit();
           break;
         case SimEventType.AreaEntered:
           this.ui$.showArea(event.area);
@@ -521,9 +899,17 @@ export class GameScene extends Phaser.Scene implements UiHost {
     if (this.flow.phase !== GamePhase.Playing || this.sim.status !== SimStatus.Alive) return null;
     const cx = this.sim.body.x + PLAYER_SIZE.width / 2;
     const cy = this.sim.body.y + PLAYER_SIZE.height / 2;
-    const hint = LEVEL_1.hints.find((candidate) => containsPoint(candidate.zone, cx, cy) && !(candidate.hideAfterShift && this.sim.stats.shifts > 0));
+    const hint = this.level.hints.find((candidate) => containsPoint(candidate.zone, cx, cy) && !(candidate.hideAfterShift && this.sim.stats.shifts > 0));
     if (!hint) return null;
     return this.inputMode === InputMode.Touch && hint.touchText ? hint.touchText : hint.text;
+  }
+
+  private enabledButtons(): ReadonlySet<ActionButton> {
+    const enabled = new Set<ActionButton>([TouchButton.Jump]);
+    if (this.sim.hasAbility(Ability.Shift)) enabled.add(TouchButton.Shift);
+    if (this.sim.hasAbility(Ability.Interact)) enabled.add(TouchButton.Interact);
+    if (this.sim.hasAbility(Ability.Dash)) enabled.add(TouchButton.Dash);
+    return enabled;
   }
 
   private renderFrame(dt: number): void {
@@ -537,22 +923,28 @@ export class GameScene extends Phaser.Scene implements UiHost {
       y: this.previousFeet.y + (current.y - this.previousFeet.y) * alpha,
     };
     const body = this.sim.body;
-    const title = phase === GamePhase.Title;
+    const title = this.titleView;
     const bothActive = title || (cinematic && this.finale.merge > 0.5);
+    const portal = this.level.portal;
+    const focus = this.titleFocus();
 
     const playerState: PlayerRenderState = title
       ? {
-          x: LEVEL_1.portal.standX,
-          y: STAND_Y,
+          x: portal.standX,
+          y: this.standY(),
           vx: 0,
           vy: 0,
           onGround: true,
           facing: 1,
           activeTimeline: Timeline.Dawn,
           shiftBlocked: false,
-          mirrorAxis: LEVEL_1.portal.x,
+          mirrorAxis: portal.x,
           mirror: 1,
           bothActive: true,
+          dashing: false,
+          gliding: false,
+          wallSliding: false,
+          wallSide: 0,
         }
       : {
           x: feet.x,
@@ -562,21 +954,25 @@ export class GameScene extends Phaser.Scene implements UiHost {
           onGround: body.onGround,
           facing: body.facing,
           activeTimeline: this.sim.timeline,
-          shiftBlocked: phase === GamePhase.Playing && this.sim.status === SimStatus.Alive && !this.sim.previewShift().ok,
-          mirrorAxis: LEVEL_1.portal.x,
+          shiftBlocked: phase === GamePhase.Playing && this.sim.status === SimStatus.Alive && !this.sim.previewShift().ok && this.sim.hasAbility(Ability.Shift),
+          mirrorAxis: portal.x,
           mirror: cinematic ? this.finale.merge : 0,
           bothActive,
+          dashing: isDashing(body),
+          gliding: body.gliding,
+          wallSliding: body.wallSliding,
+          wallSide: body.wall,
         };
-    this.world.player.update(playerState, dt);
+    this.world$.player.update(playerState, dt);
 
     if (title) {
       this.rig.merge = 1;
-      this.rig.glide(TITLE_FOCUS.x, TITLE_FOCUS.y + Math.sin(this.elapsed * 0.4) * 6, 2, dt);
+      this.rig.glide(focus.x, focus.y + Math.sin(this.elapsed * 0.4) * 6, 2, dt);
     } else if (cinematic) {
       this.rig.merge = this.finale.merge;
       const blend = this.finale.merge;
-      const targetX = feet.x + (TITLE_FOCUS.x - feet.x) * blend;
-      const targetY = feet.y - FOCUS_HEAD_OFFSET + (TITLE_FOCUS.y - (feet.y - FOCUS_HEAD_OFFSET)) * blend;
+      const targetX = feet.x + (focus.x - feet.x) * blend;
+      const targetY = feet.y - FOCUS_HEAD_OFFSET + (focus.y - (feet.y - FOCUS_HEAD_OFFSET)) * blend;
       this.rig.glide(targetX, targetY, 2.5, dt);
     } else {
       let targetX = feet.x;
@@ -598,6 +994,7 @@ export class GameScene extends Phaser.Scene implements UiHost {
       timeline: this.sim.timeline,
       shiftBlocked: playerState.shiftBlocked,
       interact: interaction === null ? InteractCue.None : interaction.available ? InteractCue.Ready : InteractCue.Muted,
+      enabled: this.enabledButtons(),
     });
     let portalFrame: PortalFrame;
     if (cinematic) {
@@ -607,19 +1004,19 @@ export class GameScene extends Phaser.Scene implements UiHost {
         assembled: this.finale.merge,
         sockets: this.finale.fragmentFlight.map((progress) => (progress >= 1 ? 1 : 0)),
       };
-      this.world.showFlight(this.finale.fragmentFlight, feet.x, feet.y - 24);
+      this.world$.showFlight(this.finale.fragmentFlight, feet.x, feet.y - 24);
     } else {
-      portalFrame = PortalView.emptyFrame(title ? 1 : this.sim.fragmentCount);
-      this.world.showFlight([0, 0, 0], feet.x, feet.y);
+      portalFrame = portal.kind === ExitKind.Gate ? OPEN_GATE_FRAME : PortalView.emptyFrame(title ? 1 : this.sim.fragmentCount);
+      this.world$.showFlight([0, 0, 0], feet.x, feet.y);
     }
-    this.world.update(dt, this.sim, this.rig, interaction, portalFrame, phase === GamePhase.Playing);
+    this.world$.update(dt, this.sim, this.rig, interaction, portalFrame, phase === GamePhase.Playing);
 
-    const portalDistance = Math.hypot(feet.x - LEVEL_1.portal.x, feet.y - LEVEL_1.portal.y);
+    const portalDistance = Math.hypot(feet.x - portal.x, feet.y - portal.y);
     const proximity = title ? 0.5 : cinematic ? 1 : clamp(1 - portalDistance / PORTAL_HEARING_DISTANCE, 0, 1);
     this.audio.setPortalProximity(proximity);
 
     const focusTimeline = this.sim.timeline;
-    const focusY = title ? STAND_Y - 40 - this.rig.scrollOf(Timeline.Dawn).y : feet.y - 24 - this.rig.scrollOf(focusTimeline).y;
+    const focusY = title ? this.standY() - 40 - this.rig.scrollOf(Timeline.Dawn).y : feet.y - 24 - this.rig.scrollOf(focusTimeline).y;
     this.ui$.updateFrame(dt, {
       timeline: this.sim.timeline,
       bothActive,

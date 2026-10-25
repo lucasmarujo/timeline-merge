@@ -17,7 +17,7 @@ function pilotAt(feetX: number, feetY: number, timeline: Timeline, activate: str
     if (!mechanism) throw new Error(`Unknown mechanism ${id}`);
     placeBody(sim.body, mechanism.x, mechanism.y);
     sim.timeline = mechanism.presence === Presence.Eclipse ? Timeline.Eclipse : Timeline.Dawn;
-    sim.step({ moveX: 0, jumpPressed: false, jumpHeld: false, shiftPressed: false, interactPressed: true });
+    sim.step({ moveX: 0, jumpPressed: false, jumpHeld: false, shiftPressed: false, interactPressed: true, dashPressed: false });
   }
   placeBody(sim.body, feetX, feetY);
   sim.timeline = timeline;

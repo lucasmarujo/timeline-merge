@@ -5,7 +5,7 @@ import type { HazardDef, SolidDef } from '../../core/types';
 import { mix, shade, withAlpha } from './color';
 import type { Palette } from './palette';
 import { PixelCanvas, type Point } from './PixelCanvas';
-import { hashString, Rng } from './rng';
+import { hashString, Rng } from '../../core/rng';
 import {
   DEFAULT_MASONRY,
   isDawn,
@@ -576,6 +576,67 @@ function paintWall({ lw, lh, palette, shape, detail }: PaintContext): PaintedSpr
   return { canvas: pc, anchorX: ax, anchorY: ay, glow };
 }
 
+function paintDrifter({ lw, lh, palette, shape, detail }: PaintContext): PaintedSprite {
+  const depth = clamp(Math.round(lw * 0.32), 10, 22);
+  const ax = 3;
+  const ay = 6;
+  const { pc, glow } = canvases(lw + 6, ay + lh + depth + 12);
+  paintUnderside(pc, ax + 2, ay + lh - 1, lw - 4, depth, palette, shape, glow);
+  paintMasonry(pc, ax, ay, lw, lh, palette, shape, { courseMin: 3, courseMax: 4, brickMin: 6, brickMax: 12, crackDensity: 0.003 }, glow);
+  pc.rect(ax, ay, lw, 1, palette.rim);
+  pc.rect(ax, ay + lh - 2, lw, 1, palette.accent);
+  for (let rune = ax + 4; rune < ax + lw - 3; rune += 6) {
+    pc.px(rune, ay + lh - 2, palette.accentBright);
+    glow.px(rune, ay + lh - 2, palette.emissive);
+  }
+  const cx = ax + lw / 2;
+  const tip = ay + lh + depth + 6;
+  pc.poly(
+    [
+      { x: cx - 4, y: ay + lh + depth * 0.4 },
+      { x: cx + 4, y: ay + lh + depth * 0.4 },
+      { x: cx, y: tip },
+    ],
+    palette.crystalMid,
+  );
+  pc.px(cx, tip - 2, palette.crystalCore);
+  softGlow(glow, cx, tip - 4, 14, palette.emissive, 0.9);
+  lightFace(pc, ax, ay, lw, lh, palette);
+  rimEdges(pc, ax, ay, lw, lh, palette);
+  paintTopGrowth(pc, ax, ay, lw, palette, detail, glow);
+  return { canvas: pc, anchorX: ax, anchorY: ay, glow };
+}
+
+function paintCrumble({ lw, lh, palette, shape, detail }: PaintContext): PaintedSprite {
+  const ax = 3;
+  const ay = 5;
+  const depth = 8;
+  const { pc, glow } = canvases(lw + 6, ay + lh + depth + 6);
+  paintUnderside(pc, ax + 2, ay + lh - 1, lw - 4, depth, palette, shape, glow);
+  paintMasonry(pc, ax, ay, lw, lh, palette, shape, { courseMin: 3, courseMax: 4, brickMin: 4, brickMax: 9, crackDensity: 0.05 }, glow);
+  pc.erase(() => {
+    for (let notch = 0; notch < Math.max(3, lw / 10); notch++) {
+      const nx = ax + shape.int(0, lw - 2);
+      const top = shape.chance(0.5);
+      pc.rect(nx, top ? ay : ay + lh - 2, shape.int(1, 3), shape.int(1, 2), '#000');
+    }
+  });
+  for (let fissure = 0; fissure < Math.max(2, lw / 18); fissure++) {
+    let fx = ax + shape.int(3, lw - 4);
+    for (let row = ay; row < ay + lh; row++) {
+      pc.px(fx, row, isDawn(palette) ? palette.stoneDeep : palette.accent);
+      if (!isDawn(palette)) glow.px(fx, row, palette.emissive);
+      fx += shape.int(-1, 1);
+    }
+  }
+  pc.rect(ax, ay, lw, 1, withAlpha(palette.rim, 0.7));
+  lightFace(pc, ax, ay, lw, lh, palette);
+  for (let pebble = 0; pebble < 4; pebble++) {
+    pc.rect(ax + detail.int(2, lw - 3), ay + lh + depth + detail.int(0, 4), 2, 2, palette.stoneDark);
+  }
+  return { canvas: pc, anchorX: ax, anchorY: ay, glow };
+}
+
 export function paintSolid(solid: SolidDef, palette: Palette): PaintedSprite {
   const context: PaintContext = {
     lw: Math.round(solid.w / PIXEL),
@@ -623,6 +684,10 @@ export function paintSolid(solid: SolidDef, palette: Palette): PaintedSprite {
       return paintTower(context);
     case SolidStyle.Wall:
       return paintWall(context);
+    case SolidStyle.Drifter:
+      return paintDrifter(context);
+    case SolidStyle.Crumble:
+      return paintCrumble(context);
   }
 }
 

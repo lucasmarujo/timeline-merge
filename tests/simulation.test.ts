@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEATH_DURATION, PLAYER_SIZE, SHIFT } from '../src/core/constants';
 import {
   DeathCause,
+  FragmentKind,
   HazardStyle,
   InteractionBlock,
   InteractionKind,
@@ -111,7 +112,7 @@ describe('timeline shifting', () => {
 
 describe('fragments and checkpoints', () => {
   const fragmentLevel = makeLevel({
-    fragments: [{ id: 'eclipse-memory', presence: Presence.Eclipse, x: 100, y: 480, title: 'T', memory: 'M' }],
+    fragments: [{ id: 'eclipse-memory', kind: FragmentKind.Memory, presence: Presence.Eclipse, x: 100, y: 480, title: 'T', memory: 'M' }],
     checkpoints: [{ id: 'cp-a', x: 300, y: 500 }],
   });
 
@@ -140,7 +141,7 @@ describe('death and respawn', () => {
   const pitLevel = makeLevel({
     solids: [{ ...GROUND, w: 400 }],
     checkpoints: [{ id: 'cp-a', x: 200, y: 500 }],
-    fragments: [{ id: 'memory', presence: Presence.Both, x: 210, y: 480, title: 'T', memory: 'M' }],
+    fragments: [{ id: 'memory', kind: FragmentKind.Memory, presence: Presence.Both, x: 210, y: 480, title: 'T', memory: 'M' }],
     hazards: [{ id: 'thorns', presence: Presence.Eclipse, style: HazardStyle.Thorns, x: 330, y: 470, w: 40, h: 30 }],
   });
 
@@ -259,6 +260,7 @@ describe('mechanisms', () => {
 describe('portal', () => {
   const memories = ['a', 'b', 'c'].map((id, index) => ({
     id,
+    kind: FragmentKind.Memory,
     presence: Presence.Both,
     x: 1300 + index * 120,
     y: 480,
@@ -300,7 +302,7 @@ describe('areas and reset', () => {
 
   it('resets progress, stats and position for a fresh run', () => {
     const level = makeLevel({
-      fragments: [{ id: 'memory', presence: Presence.Both, x: 160, y: 480, title: 'T', memory: 'M' }],
+      fragments: [{ id: 'memory', kind: FragmentKind.Memory, presence: Presence.Both, x: 160, y: 480, title: 'T', memory: 'M' }],
       checkpoints: [{ id: 'cp-a', x: 220, y: 500 }],
     });
     const sim = settled(level);

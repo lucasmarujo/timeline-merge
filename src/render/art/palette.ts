@@ -1,4 +1,6 @@
 import { Timeline } from '../../core/enums';
+import type { ToneShift } from '../../core/types';
+import { retone } from './color';
 
 export interface Palette {
   timeline: Timeline;
@@ -173,4 +175,64 @@ export const ECLIPSE_PALETTE: Palette = {
 
 export function paletteFor(timeline: Timeline): Palette {
   return timeline === Timeline.Dawn ? DAWN_PALETTE : ECLIPSE_PALETTE;
+}
+
+const ENVIRONMENT_KEYS = [
+  'skyTop',
+  'skyMid',
+  'skyLow',
+  'skyGlow',
+  'cloudLight',
+  'cloudShade',
+  'cloudWarm',
+  'hazeFar',
+  'silhouetteFar',
+  'silhouetteMid',
+  'silhouetteNear',
+  'stoneLight',
+  'stoneMid',
+  'stoneDark',
+  'stoneDeep',
+  'mortar',
+  'rim',
+  'earthLight',
+  'earthDark',
+  'foliageLight',
+  'foliage',
+  'foliageDark',
+  'flower',
+  'accent',
+  'accentBright',
+  'accentDeep',
+  'crystalCore',
+  'crystalMid',
+  'crystalEdge',
+  'metal',
+  'metalLight',
+  'water',
+  'waterLight',
+  'fog',
+  'mote',
+  'emissive',
+  'emissiveBright',
+] as const satisfies ReadonlyArray<keyof Palette>;
+
+const themed = new Map<string, Palette>();
+
+export function isNeutralTone(tone: ToneShift): boolean {
+  return tone.hue === 0 && tone.saturation === 1 && tone.light === 0;
+}
+
+export function themedPalette(timeline: Timeline, tone: ToneShift): Palette {
+  const base = paletteFor(timeline);
+  if (isNeutralTone(tone)) return base;
+  const key = `${timeline}:${tone.hue}:${tone.saturation}:${tone.light}`;
+  const cached = themed.get(key);
+  if (cached) return cached;
+  const palette: Palette = { ...base };
+  for (const name of ENVIRONMENT_KEYS) {
+    palette[name] = retone(base[name], tone.hue, tone.saturation, tone.light);
+  }
+  themed.set(key, palette);
+  return palette;
 }

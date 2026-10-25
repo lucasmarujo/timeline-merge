@@ -20,10 +20,15 @@ export interface PlayerRenderState {
   mirrorAxis: number;
   mirror: number;
   bothActive: boolean;
+  dashing: boolean;
+  gliding: boolean;
+  wallSliding: boolean;
+  wallSide: -1 | 0 | 1;
 }
 
 const TIMELINES = [Timeline.Dawn, Timeline.Eclipse] as const;
 const LAND_HOLD = 0.09;
+const TRAIL_INTERVAL = 0.035;
 
 export class PlayerView {
   private readonly sprites: Record<Timeline, Phaser.GameObjects.Sprite>;
@@ -37,6 +42,7 @@ export class PlayerView {
   private presence = 1;
   private presenceTarget = 1;
   private time = 0;
+  private trail = 0;
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -107,6 +113,11 @@ export class PlayerView {
     this.presence += (this.presenceTarget - this.presence) * (1 - Math.exp(-dt * 10));
 
     const animation = this.chooseAnimation(state);
+    this.trail = state.dashing ? this.trail - dt : 0;
+    if (state.dashing && this.trail <= 0) {
+      this.trail = TRAIL_INTERVAL;
+      this.afterimage(state.activeTimeline);
+    }
     const squashX = 1 + this.squash * 0.16;
     const squashY = 1 - this.squash * 0.18;
     const appearScale = 0.6 + 0.4 * this.presence;
@@ -116,7 +127,8 @@ export class PlayerView {
       const aura = this.auras[timeline];
       const mirrored = timeline === Timeline.Eclipse && state.mirror > 0;
       const x = mirrored ? state.x + (2 * state.mirrorAxis - 2 * state.x) * state.mirror : state.x;
-      const facingRight = mirrored && state.mirror > 0.5 ? state.facing < 0 : state.facing > 0;
+      const facing = state.wallSliding && state.wallSide !== 0 ? state.wallSide : state.facing;
+      const facingRight = mirrored && state.mirror > 0.5 ? facing < 0 : facing > 0;
 
       sprite.setPosition(Math.round(x), Math.round(state.y));
       sprite.setFlipX(!facingRight);
@@ -143,8 +155,13 @@ export class PlayerView {
   }
 
   private chooseAnimation(state: PlayerRenderState): TravelerAnimation {
+    if (state.dashing) return TravelerAnimation.Dash;
     if (this.landHold > 0 && state.onGround) return TravelerAnimation.Land;
-    if (!state.onGround) return state.vy < -40 ? TravelerAnimation.Rise : TravelerAnimation.Fall;
+    if (!state.onGround) {
+      if (state.wallSliding) return TravelerAnimation.WallSlide;
+      if (state.gliding) return TravelerAnimation.Glide;
+      return state.vy < -40 ? TravelerAnimation.Rise : TravelerAnimation.Fall;
+    }
     return Math.abs(state.vx) > 25 ? TravelerAnimation.Run : TravelerAnimation.Idle;
   }
 

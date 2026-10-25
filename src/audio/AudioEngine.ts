@@ -16,6 +16,13 @@ export enum Sfx {
   Flash = 'flash',
   MenuMove = 'menuMove',
   MenuSelect = 'menuSelect',
+  Dash = 'dash',
+  AirJump = 'airJump',
+  Crumble = 'crumble',
+  Pulse = 'pulse',
+  Unravel = 'unravel',
+  Unlock = 'unlock',
+  LevelComplete = 'levelComplete',
 }
 
 const MUTE_STORAGE_KEY = 'timeline-merge:muted';
@@ -206,6 +213,34 @@ export class AudioEngine {
       case Sfx.MenuSelect:
         this.tone(graph, t, 'sine', 660, 990, 0.14, 0.05);
         this.bell(graph, t + 0.05, 1318.5, 0.6, 0.025, 0.6);
+        break;
+      case Sfx.Dash:
+        this.noiseBurst(graph, t, 0.16, 2600, 0.9, 0.08);
+        this.sweep(graph, t, 1800, 500, 0.2, 0.05);
+        break;
+      case Sfx.AirJump:
+        this.noiseBurst(graph, t, 0.06, 2400, 1.4, 0.04);
+        this.tone(graph, t, 'sine', 420, 820, 0.11, 0.05);
+        this.bell(graph, t + 0.02, 1046.5, 0.5, 0.025, 0.5);
+        break;
+      case Sfx.Crumble:
+        this.noiseBurst(graph, t, 0.32, 260, 0.7, 0.12);
+        this.tone(graph, t, 'triangle', 140, 60, 0.3, 0.06);
+        break;
+      case Sfx.Pulse:
+        this.tone(graph, t, 'sine', 240, 180, 0.2, 0.06);
+        this.bell(graph, t, 1174.7, 0.6, 0.03, 0.7);
+        break;
+      case Sfx.Unravel:
+        this.sweep(graph, t, 90, 40, 1.6, 0.12);
+        this.noiseBurst(graph, t, 1.2, 180, 0.4, 0.07);
+        break;
+      case Sfx.Unlock:
+        [523.3, 659.3, 784, 1046.5, 1318.5].forEach((frequency, index) => this.bell(graph, t + index * 0.09, frequency, 2.2, 0.06, 0.9));
+        this.sweep(graph, t, 300, 2400, 1.2, 0.04);
+        break;
+      case Sfx.LevelComplete:
+        [392, 493.9, 587.3, 784].forEach((frequency, index) => this.bell(graph, t + index * 0.12, frequency, 2.4, 0.07, 0.9));
         break;
     }
   }

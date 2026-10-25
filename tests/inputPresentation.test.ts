@@ -2,41 +2,63 @@ import { describe, expect, it } from 'vitest';
 import { GAME_HEIGHT, GAME_WIDTH } from '../src/config';
 import { InputMode } from '../src/input/inputMode';
 import { LEVEL_1 } from '../src/levels/level1';
-import { INPUT_COPY, MENU_HIT_WIDTH, PROMPT_STYLES, UI_LAYOUT } from '../src/ui/inputPresentation';
+import { INPUT_COPY, MENU_HIT_WIDTH, PROMPT_STYLES, UI_LAYOUT, type MenuLayout } from '../src/ui/inputPresentation';
 
 const KEYBOARD_WORDS = /\b(Tab|Esc|Enter|Space|A \/ D|W \/ S|Press)\b|\b[ADEMRSW]\b(?! [a-z])/;
 const SMALLEST_PHONE_CANVAS_HEIGHT = 320;
 const TYPICAL_PHONE_CANVAS_HEIGHT = 360;
 const MIN_TOUCH_TARGET = 44;
-const PAUSE_ITEMS = 5;
+const PAUSE_ITEMS = 6;
 const VICTORY_ITEMS = 2;
+const TITLE_ITEMS = 2;
+const COMPLETE_ITEMS = 3;
 
 function cssPixels(gamePixels: number, canvasHeight: number): number {
   return (gamePixels * canvasHeight) / GAME_HEIGHT;
 }
 
+function lastItemEdge(menu: MenuLayout, items: number): number {
+  return menu.firstY + (items - 1) * menu.spacing + menu.spacing / 2;
+}
+
 describe('keyboard presentation', () => {
-  it('keeps the desktop layout exactly as it was', () => {
+  it('keeps the desktop gameplay layout as it was', () => {
     const layout = UI_LAYOUT[InputMode.Keyboard];
-    expect(layout.titlePromptSize).toBe(20);
     expect(layout.footerSize).toBe(18);
     expect(layout.hint).toEqual({ y: GAME_HEIGHT - 52, size: 25, wrap: null });
     expect(layout.hintBand).toBe(120);
     expect(layout.message).toEqual({ y: GAME_HEIGHT - 104, size: 24, wrap: null });
     expect(layout.intro).toMatchObject({ band: 300, bandAtTop: false, headingY: GAME_HEIGHT - 212, headingSize: 22, wrap: null, capsY: GAME_HEIGHT - 168, labelY: GAME_HEIGHT - 138 });
-    expect(layout.pause).toEqual({ titleY: 214, firstY: 300, spacing: 46, size: 21, helpY: GAME_HEIGHT - 110 });
-    expect(layout.victory).toEqual({ statsSize: 16, firstY: 420, spacing: 48, size: 22 });
     expect(layout.sound).toEqual({ x: GAME_WIDTH - 24, y: GAME_HEIGHT - 22, originX: 1, originY: 1 });
     expect(PROMPT_STYLES[InputMode.Keyboard]).toEqual({ keys: { interact: 'E', shift: 'Tab' }, scale: 1 });
   });
 
-  it('keeps the desktop wording', () => {
+  it('lays out the desktop menus', () => {
+    const layout = UI_LAYOUT[InputMode.Keyboard];
+    expect(layout.title).toEqual({ firstY: GAME_HEIGHT - 150, spacing: 44, size: 21 });
+    expect(layout.pause).toEqual({ titleY: 184, firstY: 262, spacing: 44, size: 21, helpY: GAME_HEIGHT - 84 });
+    expect(layout.complete).toEqual({ firstY: 452, spacing: 46, size: 22 });
+    expect(layout.victory).toEqual({ statsSize: 16, firstY: 430, spacing: 48, size: 22 });
+  });
+
+  it('keeps every desktop menu between its heading and its help line', () => {
+    const layout = UI_LAYOUT[InputMode.Keyboard];
+    expect(layout.pause.firstY - layout.pause.spacing / 2).toBeGreaterThan(layout.pause.titleY);
+    expect(lastItemEdge(layout.pause, PAUSE_ITEMS)).toBeLessThan(layout.pause.helpY);
+    expect(lastItemEdge(layout.title, TITLE_ITEMS)).toBeLessThan(GAME_HEIGHT - 40);
+    expect(lastItemEdge(layout.complete, COMPLETE_ITEMS)).toBeLessThan(GAME_HEIGHT - 40);
+    expect(lastItemEdge(layout.victory, VICTORY_ITEMS)).toBeLessThan(GAME_HEIGHT - 40);
+  });
+
+  it('keeps the desktop wording and names the dash key', () => {
     const copy = INPUT_COPY[InputMode.Keyboard];
-    expect(copy.titlePrompt).toBe('PRESS  ENTER  TO  BEGIN');
+    expect(copy.cardPrompt).toBe('PRESS  ENTER  TO  CONTINUE');
+    expect(copy.menuHelp).toBe('W / S to choose   ·   Enter to confirm');
     expect(copy.pauseHelp).toBe('W / S to choose   ·   Enter to confirm   ·   Esc to resume');
     expect(copy.soundOff).toBe('SOUND OFF  ·  M');
     expect(copy.introTip).toBeNull();
-    expect(copy.introControls.map((control) => control.key)).toEqual(['A  D', 'W', 'Tab', 'E', 'R', 'Esc', 'M']);
+    expect(copy.titleFooter).toContain('Q dash');
+    expect(copy.introControls.map((control) => control.key)).toEqual(['A  D', 'W', 'R', 'Esc', 'M']);
   });
 });
 
@@ -45,7 +67,7 @@ describe('touch presentation', () => {
   const layout = UI_LAYOUT[InputMode.Touch];
 
   it('never asks a touch player to press a keyboard key', () => {
-    const texts = [copy.titlePrompt, copy.titleFooter, copy.introTip ?? '', copy.pauseHelp, copy.soundOff, ...copy.introControls.map((control) => control.key)];
+    const texts = [copy.cardPrompt, copy.menuHelp, copy.atlasHelp, copy.titleFooter, copy.introTip ?? '', copy.pauseHelp, copy.soundOff, ...copy.introControls.map((control) => control.key)];
     for (const text of texts) {
       expect(text).not.toMatch(KEYBOARD_WORDS);
     }
@@ -64,7 +86,7 @@ describe('touch presentation', () => {
   });
 
   it('makes menu items large enough to tap on phones', () => {
-    for (const spacing of [layout.pause.spacing, layout.victory.spacing]) {
+    for (const spacing of [layout.title.spacing, layout.pause.spacing, layout.complete.spacing, layout.victory.spacing]) {
       expect(cssPixels(spacing, TYPICAL_PHONE_CANVAS_HEIGHT)).toBeGreaterThanOrEqual(MIN_TOUCH_TARGET);
       expect(cssPixels(spacing, SMALLEST_PHONE_CANVAS_HEIGHT)).toBeGreaterThanOrEqual(40);
     }
@@ -73,11 +95,11 @@ describe('touch presentation', () => {
   });
 
   it('fits every menu between its title and its help line', () => {
-    const lastPause = layout.pause.firstY + (PAUSE_ITEMS - 1) * layout.pause.spacing;
     expect(layout.pause.firstY - layout.pause.spacing / 2).toBeGreaterThan(layout.pause.titleY);
-    expect(lastPause + layout.pause.spacing / 2).toBeLessThan(layout.pause.helpY);
-    const lastVictory = layout.victory.firstY + (VICTORY_ITEMS - 1) * layout.victory.spacing;
-    expect(lastVictory + layout.victory.spacing / 2).toBeLessThan(GAME_HEIGHT);
+    expect(lastItemEdge(layout.pause, PAUSE_ITEMS)).toBeLessThan(layout.pause.helpY);
+    expect(lastItemEdge(layout.title, TITLE_ITEMS)).toBeLessThanOrEqual(GAME_HEIGHT);
+    expect(lastItemEdge(layout.complete, COMPLETE_ITEMS)).toBeLessThanOrEqual(GAME_HEIGHT);
+    expect(lastItemEdge(layout.victory, VICTORY_ITEMS)).toBeLessThan(GAME_HEIGHT);
   });
 
   it('enlarges the text that phones would otherwise render too small', () => {

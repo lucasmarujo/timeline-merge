@@ -1,0 +1,91 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: shellcheck deploy/blue-green.sh deploy/blue-green.test.sh
+      - run: bash deploy/blue-green.test.sh
+
+  deploy:
+    needs: ci
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://timelinemerge.marujo.dev
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/lucasmarujo/timeline-merge
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - id: files
+        run: |
+          echo "compose=$(base64 -w0 deploy/docker-compose.prod.yml)" >> "$GITHUB_OUTPUT"
+          echo "script=$(base64 -w0 deploy/blue-green.sh)" >> "$GITHUB_OUTPUT"
+
+      - uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          fingerprint: ${{ secrets.VPS_FINGERPRINT }}
+          envs: IMAGE_TAG,GHCR_TOKEN,GHCR_ACTOR,COMPOSE_B64,SCRIPT_B64
+          script: |
+            set -e
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
+            trap 'docker logout ghcr.io' EXIT
+            mkdir -p /opt/timeline-merge
+            cd /opt/timeline-merge
+            printf '%s' "$COMPOSE_B64" | base64 -d > docker-compose.prod.yml
+            printf '%s' "$SCRIPT_B64" | base64 -d > blue-green.sh
+            IMAGE_TAG="$IMAGE_TAG" bash blue-green.sh docker-compose.prod.yml game timeline_merge
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_ACTOR: ${{ github.actor }}
+          COMPOSE_B64: ${{ steps.files.outputs.compose }}
+          SCRIPT_B64: ${{ steps.files.outputs.script }}

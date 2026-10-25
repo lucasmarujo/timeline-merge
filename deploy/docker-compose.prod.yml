@@ -1,0 +1,19 @@
+name: timeline-merge
+
+x-game: &game
+  image: ghcr.io/lucasmarujo/timeline-merge:${IMAGE_TAG:-latest}
+  networks: [proxy]
+  restart: unless-stopped
+
+services:
+  game-blue:
+    <<: *game
+    container_name: timeline_merge_blue
+
+  game-green:
+    <<: *game
+    container_name: timeline_merge_green
+
+networks:
+  proxy:
+    external: true

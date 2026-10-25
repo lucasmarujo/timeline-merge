@@ -3,6 +3,8 @@ dist
 .vite
 *.log
 imagem-base.png
+.git
+.github
+deploy
 Dockerfile
-docker-compose.yml
 .dockerignore

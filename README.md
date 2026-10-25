@@ -21,10 +21,20 @@ npm test           # unit, level-integrity and full-playthrough tests
 The `Dockerfile` installs dependencies, runs the test suite and builds the game in a Node stage, then serves `dist/` with nginx (long-lived cache for hashed assets, `no-cache` for the page, security headers, health check).
 
 ```bash
-docker compose up -d --build   # container "timeline-merge" on the external "proxy" network
+docker build -t timeline-merge . && docker run -p 8080:80 timeline-merge   # http://localhost:8080
 ```
 
-`docker-compose.yml` publishes no host port: a reverse proxy on the `proxy` network (Caddy in production) terminates TLS and forwards the domain to `timeline-merge:80`. To run it standalone, use `docker build -t timeline-merge . && docker run -p 8080:80 timeline-merge`.
+## Continuous deployment
+
+`.github/workflows/deploy.yml` runs on every push to `main` (Markdown-only changes are skipped) and can be started by hand from the Actions tab:
+
+1. **CI** — type-check, unit tests, production build, `shellcheck` and the blue-green script test. Pull requests stop here.
+2. **Image** — builds the Docker image and publishes it to GHCR as `ghcr.io/lucasmarujo/timeline-merge:<commit sha>` and `:latest`.
+3. **Deploy** — over SSH, writes `deploy/docker-compose.prod.yml` and `deploy/blue-green.sh` to `/opt/timeline-merge` on the server and runs a blue-green swap: the idle colour (`timeline_merge_blue` / `timeline_merge_green`) starts with the new image, and the old one is removed only after the new one is healthy. If it never becomes healthy, the deploy fails and the current version stays online. Caddy routes the domain to whichever colour is healthy.
+
+Repository secrets: `VPS_HOST`, `VPS_USER`, `VPS_PORT`, `VPS_SSH_KEY` (a deploy-only key) and `VPS_FINGERPRINT` (the server's SSH host key fingerprint, so the runner refuses an impostor host).
+
+Roll back by re-running an earlier successful run of the workflow, or on the server with `IMAGE_TAG=<older sha> bash blue-green.sh docker-compose.prod.yml game timeline_merge` (after `docker login ghcr.io`).
 
 ## Controls
 

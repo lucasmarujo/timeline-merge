@@ -1,0 +1,43 @@
+import { FlowAction, GamePhase } from './enums';
+
+const TRANSITIONS: Readonly<Record<GamePhase, Partial<Record<FlowAction, GamePhase>>>> = {
+  [GamePhase.Title]: {
+    [FlowAction.Start]: GamePhase.Playing,
+  },
+  [GamePhase.Playing]: {
+    [FlowAction.Pause]: GamePhase.Paused,
+    [FlowAction.BeginFinale]: GamePhase.Finale,
+  },
+  [GamePhase.Paused]: {
+    [FlowAction.Resume]: GamePhase.Playing,
+    [FlowAction.ReturnToTitle]: GamePhase.Title,
+  },
+  [GamePhase.Finale]: {
+    [FlowAction.Complete]: GamePhase.Victory,
+  },
+  [GamePhase.Victory]: {
+    [FlowAction.PlayAgain]: GamePhase.Playing,
+    [FlowAction.ReturnToTitle]: GamePhase.Title,
+  },
+};
+
+export class GameFlow {
+  private current: GamePhase = GamePhase.Title;
+
+  get phase(): GamePhase {
+    return this.current;
+  }
+
+  can(action: FlowAction): boolean {
+    return TRANSITIONS[this.current][action] !== undefined;
+  }
+
+  dispatch(action: FlowAction): boolean {
+    const next = TRANSITIONS[this.current][action];
+    if (next === undefined) {
+      return false;
+    }
+    this.current = next;
+    return true;
+  }
+}
